@@ -412,10 +412,10 @@ The repository will also serve as a study journal documenting:
 - [X] Configure CMake project
 - [X] Install and link PETSc
 - [X] Build first PETSc application
-- [ ] Solve a small linear system
-- [ ] Learn Mat, Vec, KSP and PC
-- [ ] Learn PETSc options database
-- [ ] Learn basic MPI workflow
+- [X] Solve a small linear system
+- [X] Learn Mat, Vec, KSP and PC
+- [X] Learn PETSc options database
+- [X] Learn basic MPI workflow
 
 ### Phase 2 – SPD Systems
 
