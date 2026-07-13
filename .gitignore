@@ -72,9 +72,9 @@ Testing/
 .idea/
 
 # Benchmark output
-results/*.csv
-results/*.json
-results/*.png
+results/*/*.csv
+results/*/*.json
+results/*/*.png
 
 # PETSc logs
 *.petsc
