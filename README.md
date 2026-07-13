@@ -410,8 +410,8 @@ The repository will also serve as a study journal documenting:
 ### Phase 1 – Foundations
 
 - [X] Configure CMake project
-- [ ] Install and link PETSc
-- [ ] Build first PETSc application
+- [X] Install and link PETSc
+- [X] Build first PETSc application
 - [ ] Solve a small linear system
 - [ ] Learn Mat, Vec, KSP and PC
 - [ ] Learn PETSc options database
