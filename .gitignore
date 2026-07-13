@@ -67,3 +67,14 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# CLion
+.idea/
+
+# Benchmark output
+results/*.csv
+results/*.json
+results/*.png
+
+# PETSc logs
+*.petsc
