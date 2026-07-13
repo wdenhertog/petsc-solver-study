@@ -20,6 +20,7 @@ add_executable(
         benchmark
         src/main.cpp
         src/linear_system.cpp
+        src/benchmark_result.cpp
 )
 
 target_include_directories(

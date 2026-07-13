@@ -25,3 +25,5 @@ struct BenchmarkResult
 
     std::optional<std::string> error;
 };
+
+std::string to_json(const BenchmarkResult& result);
