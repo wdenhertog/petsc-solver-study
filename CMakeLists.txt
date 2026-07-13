@@ -19,6 +19,7 @@ pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET PETSc)
 add_executable(
         benchmark
         src/main.cpp
+        src/linear_system.cpp
 )
 
 target_include_directories(

@@ -1,13 +1,12 @@
 #include <petscsys.h>
 
+#include "linear_system.hpp"
+
 int main(int argc, char** argv)
 {
     PetscInitialize(&argc, &argv, nullptr, nullptr);
-
-    PetscPrintf(PETSC_COMM_WORLD,
-                "Hello from PETSc!\n");
+    solve_linear_system();
 
     PetscFinalize();
-
     return 0;
 }
