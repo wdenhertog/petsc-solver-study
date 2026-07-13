@@ -1,3 +1,5 @@
 #pragma once
 
-void solve_linear_system();
+#include "benchmark_result.hpp"
+
+BenchmarkResult solve_linear_system();

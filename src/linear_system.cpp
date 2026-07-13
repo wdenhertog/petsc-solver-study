@@ -2,8 +2,10 @@
 
 #include <petscksp.h>
 
-void solve_linear_system()
+BenchmarkResult solve_linear_system()
 {
+    BenchmarkResult result;
+
     Mat A;
     Vec x, b;
     KSP ksp;
@@ -26,14 +28,17 @@ void solve_linear_system()
     // [  0 -1  2 -1 0 0 ... 0 ]
     // [ ..................... ]
     // [ 0 ...  0  0 0 0  -1 2 ]
-    for (PetscInt i = 0; i < n; ++i) {
-        if (i > 0) {
-            MatSetValue(A, i, i-1, -1.0, INSERT_VALUES);
+    for (PetscInt i = 0; i < n; ++i)
+    {
+        if (i > 0)
+        {
+            MatSetValue(A, i, i - 1, -1.0, INSERT_VALUES);
         }
         MatSetValue(A, i, i, 2.0, INSERT_VALUES);
 
-        if (i < n-1) {
-            MatSetValue(A, i, i+1, -1.0, INSERT_VALUES);
+        if (i < n - 1)
+        {
+            MatSetValue(A, i, i + 1, -1.0, INSERT_VALUES);
         }
     }
 
@@ -61,8 +66,9 @@ void solve_linear_system()
 
     // Let PETSc read runtime options
     KSPSetFromOptions(ksp);
+    KSPViewFromOptions(ksp, nullptr, "-ksp_view");
 
-    // Get preconditioner and print default type
+    // Get preconditioner
     KSPGetPC(ksp, &pc);
 
     PetscLogDouble start_time;
@@ -75,22 +81,38 @@ void solve_linear_system()
 
     PetscTime(&end_time);
 
+    KSPType ksp_type;
+    KSPGetType(ksp, &ksp_type);
+
+    PCType pc_type;
+    PCGetType(pc, &pc_type);
+
+    KSPConvergedReason converged_reason;
+    KSPGetConvergedReason(ksp, &converged_reason);
+
+    const char* reason_str;
+    KSPGetConvergedReasonString(ksp, &reason_str);
+
     PetscInt iterations;
     KSPGetIterationNumber(ksp, &iterations);
 
     PetscReal residual_norm;
     KSPGetResidualNorm(ksp, &residual_norm);
 
-    PetscPrintf(PETSC_COMM_WORLD, "Solve time: %.6f s\n", end_time - start_time);
-    PetscPrintf(PETSC_COMM_WORLD, "Number of iterations: %d\n", static_cast<int>(iterations));
-    PetscPrintf(PETSC_COMM_WORLD, "Final residual: %e\n", residual_norm);
-
-    // PetscPrintf(PETSC_COMM_WORLD, "\nSolution vector:\n");
-
-    // VecView(x, PETSC_VIEWER_STDOUT_WORLD);
+    result.problem = "1D Poisson Matrix";
+    result.ksp = ksp_type;
+    result.pc = pc_type;
+    result.n = n;
+    result.iterations = iterations;
+    result.residual = residual_norm;
+    result.solve_time = end_time - start_time;
+    result.converged_reason = converged_reason;
+    result.converged_reason_string = reason_str;
+    result.error = std::nullopt;
 
     KSPDestroy(&ksp);
     VecDestroy(&x);
     VecDestroy(&b);
     MatDestroy(&A);
+    return result;
 }
