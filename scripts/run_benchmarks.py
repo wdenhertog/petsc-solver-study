@@ -3,77 +3,67 @@ import json
 import subprocess
 from pathlib import Path
 
-EXECUTABLE = "../cmake-build-debug-wsl/benchmark"
+REPO_ROOT = Path(__file__).resolve().parent.parent  # scripts/ -> repo root
+BENCHMARK_BIN = REPO_ROOT / "cmake-build-debug-wsl" / "benchmark"
+RESULTS_FILE = REPO_ROOT / "results" / "json" / "benchmarks.jsonl"
 
-KSPS = [
-    "cg",
-    "gmres",
-]
+RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-PCS = [
-    "jacobi",
-    "ilu",
-    "gamg"
-]
+mesh_sizes = [32, 64, 128, 256, 512]
+gmres_restarts = [30, 50, 75, 100, 150, 200]
+jacobi_types = ["diagonal", "rowmax", "rowsum"]
+ilu_levels = [0, 1, 2, 3]
+gamg_types = ["agg", "classical"]
 
-SIZES = [
-    100,
-    1_000,
-    10_000,
-    100_000,
-    1_000_000
-]
 
-results = []
+def build_ksp_configs():
+    configs = [{"ksp": "cg", "extra": {}}]
+    for restart in gmres_restarts:
+        configs.append({"ksp": "gmres", "extra": {"ksp_gmres_restart": restart}})
+    return configs
 
-for ksp, pc, n in itertools.product(
-    KSPS,
-    PCS,
-    SIZES,
-):
-    print(
-        f"Running: ksp={ksp}, pc={pc}, n={n}"
-    )
 
-    command = [
-        EXECUTABLE,
-        "-ksp_type", ksp,
-        "-pc_type", pc,
-        "-n", str(n),
-    ]
+def build_pc_configs():
+    configs = []
+    for jtype in jacobi_types:
+        configs.append({"pc": "jacobi", "extra": {"pc_jacobi_type": jtype}})
+    for levels in ilu_levels:
+        configs.append({"pc": "ilu", "extra": {"pc_factor_levels": levels}})
+    for gamg_type in gamg_types:
+        configs.append({"pc": "gamg", "extra": {"pc_gamg_type": gamg_type}})
+    return configs
 
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
 
-    benchmark_result = json.loads(
-        completed.stdout
-    )
+def run(problem, n, pc_config, ksp_config, max_it=3000):
+    cmd = [str(BENCHMARK_BIN), "-problem", problem,
+           "-n", str(n),
+           "-ksp_type", ksp_config["ksp"], "-pc_type", pc_config["pc"],
+           "-ksp_max_it", str(max_it)]
+    for flag, value in {**ksp_config["extra"], **pc_config["extra"]}.items():
+        cmd += [f"-{flag}", str(value)]
 
-    results.append(
-        benchmark_result
-    )
+    out = subprocess.run(cmd, capture_output=True, text=True)
+    return json.loads(out.stdout)
 
-output_file = Path(
-    "../results/json/benchmark_results.json"
-)
 
-output_file.parent.mkdir(
-    parents=True,
-    exist_ok=True,
-)
+def log(f, result, **context):
+    f.write(json.dumps(result) + "\n")
+    f.flush()
+    ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
+    print(f"{ctx_str}: {result['iterations']} its, "
+          f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
+          f"success={result['success']}")
 
-with output_file.open("w") as f:
-    json.dump(
-        results,
-        f,
-        indent=4,
-    )
 
-print(
-    f"Saved {len(results)} results to "
-    f"{output_file}"
-)
+ksp_configs = build_ksp_configs()
+pc_configs = build_pc_configs()
+
+print(f"Total runs: {len(mesh_sizes) * len(ksp_configs) * len(pc_configs)}")
+
+with open(RESULTS_FILE, "w") as f:
+    for problem, n, pc_config, ksp_config in itertools.product(["poisson"], mesh_sizes, pc_configs, ksp_configs):
+        result = run(problem, n, pc_config, ksp_config)
+        log(f, result,
+            problem=problem, n=n,
+            pc=pc_config["pc"], **pc_config["extra"],
+            ksp=ksp_config["ksp"], **ksp_config["extra"])

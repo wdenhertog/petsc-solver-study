@@ -8,6 +8,7 @@ std::string to_json(const BenchmarkResult& result)
     oss << "{\n";
     oss << "    \"problem\": \"" << result.problem << "\",\n";
     oss << "    \"ksp\": \"" << result.ksp_type << "\",\n";
+    oss << "    \"gmres_restart\": " << result.gmres_restart << ",\n";
     oss << "    \"pc\": \"" << result.pc_type << "\",\n";
     oss << "    \"dofs\": " << result.dofs << ",\n";
     oss << "    \"iterations\": " << result.iterations << ",\n";

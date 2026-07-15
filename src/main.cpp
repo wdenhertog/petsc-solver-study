@@ -60,6 +60,15 @@ int main(int argc, char** argv)
         KSPGetType(ksp, &ksp_type);
         result.ksp_type = ksp_type;
 
+        if (std::string(ksp_type) == "gmres")
+        {
+            KSPGMRESGetRestart(ksp, &result.gmres_restart);
+        }
+        else
+        {
+            result.gmres_restart = -1;
+        }
+
         PC pc;
         KSPGetPC(ksp, &pc);
         PCType pc_type;

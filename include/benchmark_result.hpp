@@ -8,7 +8,8 @@
 struct BenchmarkResult
 {
     std::string problem;
-    std::string ksp_type, pc_type; // read back via KSPGetType/PCGetType for the record
+    std::string ksp_type, pc_type;
+    PetscInt gmres_restart;
     int mesh_size = 0;
     PetscInt dofs = 0;
     PetscInt iterations = 0;
