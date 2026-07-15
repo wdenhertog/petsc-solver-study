@@ -21,12 +21,15 @@ add_executable(
         src/main.cpp
         src/linear_system.cpp
         src/benchmark_result.cpp
+        src/problem_registry.cpp
+        src/problems/poisson.cpp
 )
 
 target_include_directories(
         benchmark
         PRIVATE
         ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/include/problems
 )
 
 target_link_libraries(

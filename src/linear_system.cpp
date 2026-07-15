@@ -100,15 +100,14 @@ BenchmarkResult solve_linear_system()
     KSPGetResidualNorm(ksp, &residual_norm);
 
     result.problem = "1D Poisson Matrix";
-    result.ksp = ksp_type;
-    result.pc = pc_type;
-    result.n = n;
+    result.ksp_type = ksp_type;
+    result.pc_type = pc_type;
+    result.dofs = n;
     result.iterations = iterations;
-    result.residual = residual_norm;
+    result.residual_norm = residual_norm;
     result.solve_time = end_time - start_time;
     result.converged_reason = converged_reason;
     result.converged_reason_string = reason_str;
-    result.error = std::nullopt;
     result.success = result.converged_reason > 0;
 
     KSPDestroy(&ksp);

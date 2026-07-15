@@ -3,29 +3,21 @@
 #include <petscksp.h>
 #include <petscsys.h>
 
-#include <optional>
 #include <string>
 
 struct BenchmarkResult
 {
     std::string problem;
-
-    std::string ksp;
-    std::string pc;
-
-    PetscInt n{};
-
-    PetscInt iterations{};
-    PetscReal residual{};
-
-    double solve_time{};
-    double setup_time{};
-
-    KSPConvergedReason converged_reason{};
+    std::string ksp_type, pc_type; // read back via KSPGetType/PCGetType for the record
+    int mesh_size = 0;
+    PetscInt dofs = 0;
+    PetscInt iterations = 0;
+    double solve_time = 0.0, setup_time = 0.0;
+    KSPConvergedReason converged_reason;
     std::string converged_reason_string;
-    bool success{};
-
-    std::optional<std::string> error;
+    bool success;
+    double residual_norm = 0.0;
+    int mpi_ranks = 1;
 };
 
 std::string to_json(const BenchmarkResult& result);
