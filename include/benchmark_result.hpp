@@ -22,6 +22,7 @@ struct BenchmarkResult
 
     KSPConvergedReason converged_reason{};
     std::string converged_reason_string;
+    bool success{};
 
     std::optional<std::string> error;
 };

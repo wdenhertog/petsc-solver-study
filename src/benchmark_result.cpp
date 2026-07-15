@@ -13,6 +13,7 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"iterations\": " << result.iterations << ",\n";
     oss << "    \"residual\": " << result.residual << ",\n";
     oss << "    \"solve_time\": " << result.solve_time << ",\n";
+    oss << "    \"success\": " << result.success << ",\n";
     oss << "    \"converged_reason\": " << result.converged_reason << ",\n";
     oss << "    \"converged_reason_string\": \"" << result.converged_reason_string << "\"\n";
     oss << "}";

@@ -109,6 +109,7 @@ BenchmarkResult solve_linear_system()
     result.converged_reason = converged_reason;
     result.converged_reason_string = reason_str;
     result.error = std::nullopt;
+    result.success = result.converged_reason > 0;
 
     KSPDestroy(&ksp);
     VecDestroy(&x);
