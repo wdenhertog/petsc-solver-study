@@ -210,7 +210,8 @@ Again, the preconditioner appears to have a much larger impact than the Krylov m
 
 ### 1. Preconditioners matter more than Krylov methods
 
-The largest performance gains were obtained by changing the preconditioner rather than the Krylov solver.
+The largest performance gains were obtained by changing the preconditioner rather than the Krylov solver. The solve time
+is basically only decided by the preconditioner.
 
 ---
 
