@@ -19,6 +19,7 @@ struct BenchmarkResult
     PetscReal residual{};
 
     double solve_time{};
+    double setup_time{};
 
     KSPConvergedReason converged_reason{};
     std::string converged_reason_string;
