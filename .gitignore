@@ -75,6 +75,7 @@ Testing/
 # Benchmark output
 results/*/*.csv
 results/*/*.json
+results/*/*.jsonl
 results/*/*.png
 
 # PETSc logs
