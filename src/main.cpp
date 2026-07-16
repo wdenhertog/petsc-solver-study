@@ -8,6 +8,8 @@
 int main(int argc, char** argv)
 {
     PetscInitialize(&argc, &argv, nullptr, nullptr);
+    PETSC_STDOUT = stderr;
+    PetscMemorySetGetMaximumUsage();
 
     char problem_name[256];
     PetscOptionsGetString(nullptr, nullptr, "-problem", problem_name, sizeof(problem_name),

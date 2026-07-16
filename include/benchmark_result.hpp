@@ -13,15 +13,16 @@ struct BenchmarkResult
     std::string jacobi_type;
     PetscInt ilu_level;
     std::string gamg_type;
-    int mesh_size = 0;
+    PetscInt mesh_size = 0;
     PetscInt dofs = 0;
     PetscInt iterations = 0;
-    double solve_time = 0.0, setup_time = 0.0;
+    PetscReal solve_time = 0.0, setup_time = 0.0;
     KSPConvergedReason converged_reason;
     std::string converged_reason_string;
-    bool success;
-    double residual_norm = 0.0;
-    int mpi_ranks = 1;
+    PetscBool success;
+    PetscReal residual_norm = 0.0;
+    PetscLogDouble peak_memory_bytes = 0.0;
+    PetscInt mpi_ranks = 1;
 };
 
 std::string to_json(const BenchmarkResult& result);

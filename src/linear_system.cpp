@@ -108,7 +108,7 @@ BenchmarkResult solve_linear_system()
     result.solve_time = end_time - start_time;
     result.converged_reason = converged_reason;
     result.converged_reason_string = reason_str;
-    result.success = result.converged_reason > 0;
+    result.success = result.converged_reason > 0 ? PETSC_TRUE : PETSC_FALSE;
 
     KSPDestroy(&ksp);
     VecDestroy(&x);

@@ -19,6 +19,7 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"residual\": " << result.residual_norm << ",\n";
     oss << "    \"setup_time\": " << result.setup_time << ",\n";
     oss << "    \"solve_time\": " << result.solve_time << ",\n";
+    oss << "    \"peak_memory_bytes\": " << result.peak_memory_bytes << ",\n";
     oss << "    \"success\": " << result.success << ",\n";
     oss << "    \"converged_reason\": " << result.converged_reason << ",\n";
     oss << "    \"converged_reason_string\": \"" << result.converged_reason_string << "\"\n";
@@ -30,12 +31,13 @@ void fill_solve_results(KSP ksp, BenchmarkResult& result)
 {
     KSPGetIterationNumber(ksp, &result.iterations);
     KSPGetResidualNorm(ksp, &result.residual_norm);
+    PetscMemoryGetMaximumUsage(&result.peak_memory_bytes);
 
     KSPConvergedReason reason;
     KSPGetConvergedReason(ksp, &reason);
     result.converged_reason = reason;
     result.converged_reason_string = KSPConvergedReasons[reason];
-    result.success = (reason > 0);
+    result.success = reason > 0 ? PETSC_TRUE : PETSC_FALSE;
 }
 
 void fill_solver_config(KSP ksp, BenchmarkResult& result)
@@ -71,8 +73,10 @@ void fill_solver_config(KSP ksp, BenchmarkResult& result)
     }
     else if (std::string(pc_type) == "gamg")
     {
-        PCGAMGType gamg_type;
-        PCGAMGGetType(pc, &gamg_type);
-        result.gamg_type = gamg_type;
+        char gamg_type_buf[64];
+        PetscBool found;
+        PetscOptionsGetString(nullptr, nullptr, "-pc_gamg_type", gamg_type_buf,
+                              sizeof(gamg_type_buf), &found);
+        result.gamg_type = found ? gamg_type_buf : "";
     }
 }
