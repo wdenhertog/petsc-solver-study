@@ -11,9 +11,15 @@ int main(int argc, char** argv)
     PETSC_STDOUT = stderr;
     PetscMemorySetGetMaximumUsage();
 
-    char problem_name[256];
-    PetscOptionsGetString(nullptr, nullptr, "-problem", problem_name, sizeof(problem_name),
-                          nullptr);
+    char problem_name[256] = {};
+    PetscBool found;
+    PetscOptionsGetString(nullptr, nullptr, "-problem", problem_name, sizeof(problem_name), &found);
+    if (!found)
+    {
+        PetscPrintf(PETSC_COMM_WORLD, "Missing required -problem flag\n");
+        PetscFinalize();
+        return 1;
+    }
 
     std::unique_ptr<Problem> problem;
     try
