@@ -4,12 +4,12 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # scripts/ -> repo root
-BENCHMARK_BIN = REPO_ROOT / "cmake-build-debug-wsl" / "benchmark"
+BENCHMARK_BIN = REPO_ROOT / "cmake-build-release-wsl" / "benchmark"
 RESULTS_FILE = REPO_ROOT / "results" / "json" / "benchmarks.jsonl"
 
 RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-mesh_sizes = [32, 64, 128]
+mesh_sizes = [32, 64, 128, 256, 512, 1024]
 gmres_restarts = [30, 50, 75, 100, 150, 200]
 jacobi_types = ["diagonal", "rowmax", "rowsum"]
 ilu_levels = [0, 1, 2, 3]
@@ -50,16 +50,22 @@ def run(problem, n, pc_config, ksp_config, max_it=3000):
         cmd += [f"-{flag}", str(value)]
 
     out = subprocess.run(cmd, capture_output=True, text=True)
-    return json.loads(out.stdout)
+    try:
+        return json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return {"error": out.stderr.strip() or f"exit code {out.returncode}"}
 
 
 def log(f, result, **context):
     f.write(json.dumps(result) + "\n")
     f.flush()
     ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
-    print(f"{ctx_str}: {result['iterations']} its, "
-          f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
-          f"success={result['success']}")
+    if "error" in result:
+        print(f"{ctx_str}: ERROR - {result['error']}")
+    else:
+        print(f"{ctx_str}: {result['iterations']} its, "
+              f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
+              f"success={result['success']}")
 
 
 ksp_configs = build_ksp_configs()
