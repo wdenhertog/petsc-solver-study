@@ -2,7 +2,7 @@
 
 // #include "problems/elasticity.hpp"
 #include "problems/poisson.hpp"
-// #include "problems/convection_diffusion.hpp"   // add as they land
+// #include "problems/convection_diffusion.hpp"
 
 #include <sstream>
 #include <stdexcept>

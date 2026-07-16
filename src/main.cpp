@@ -38,7 +38,7 @@ int main(int argc, char** argv)
         KSP ksp;
         KSPCreate(PETSC_COMM_WORLD, &ksp);
         KSPSetOperators(ksp, A, A);
-        KSPSetFromOptions(ksp); // -ksp_type, -pc_type all come from CLI, free
+        KSPSetFromOptions(ksp);
         PetscLogDouble t0, t1, t2;
         PetscTime(&t0);
         KSPSetUp(ksp);
@@ -47,34 +47,8 @@ int main(int argc, char** argv)
         PetscTime(&t2);
         result.setup_time = t1 - t0;
         result.solve_time = t2 - t1;
-        KSPGetIterationNumber(ksp, &result.iterations);
-        KSPGetResidualNorm(ksp, &result.residual_norm);
-
-        KSPConvergedReason reason;
-        KSPGetConvergedReason(ksp, &reason);
-        result.converged_reason = reason;
-        result.converged_reason_string = KSPConvergedReasons[reason];
-        result.success = (reason > 0);
-
-        KSPType ksp_type;
-        KSPGetType(ksp, &ksp_type);
-        result.ksp_type = ksp_type;
-
-        if (std::string(ksp_type) == "gmres")
-        {
-            KSPGMRESGetRestart(ksp, &result.gmres_restart);
-        }
-        else
-        {
-            result.gmres_restart = -1;
-        }
-
-        PC pc;
-        KSPGetPC(ksp, &pc);
-        PCType pc_type;
-        PCGetType(pc, &pc_type);
-        result.pc_type = pc_type;
-
+        fill_solve_results(ksp, result);
+        fill_solver_config(ksp, result);
         VecGetSize(x, &result.dofs);
         break;
     }
