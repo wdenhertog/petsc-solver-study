@@ -80,3 +80,5 @@ results/*/*.png
 
 # PETSc logs
 *.petsc
+
+bin/

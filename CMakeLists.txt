@@ -19,10 +19,15 @@ pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET PETSc)
 add_executable(
         benchmark
         src/main.cpp
-        src/linear_system.cpp
         src/benchmark_result.cpp
         src/problem_registry.cpp
         src/problems/poisson.cpp
+)
+
+set_target_properties(
+        benchmark
+        PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin
 )
 
 target_include_directories(

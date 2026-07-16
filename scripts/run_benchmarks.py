@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # scripts/ -> repo root
-BENCHMARK_BIN = REPO_ROOT / "cmake-build-release-wsl" / "benchmark"
+BENCHMARK_BIN = REPO_ROOT / "bin" / "benchmark"
 RESULTS_FILE = REPO_ROOT / "results" / "json" / "benchmarks.jsonl"
 
 RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
