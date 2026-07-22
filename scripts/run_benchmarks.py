@@ -24,46 +24,57 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # Python-only objects) so the swap-over stays a one-liner.
 # ---------------------------------------------------------------------------
 CONFIG = {
-    "mpi": {"nprocs": [1, 4]},
+    "mpi": {"nprocs": [1, 2, 4, 8, 16]},
     "problems": {
         "poisson": {
             "kind": "linear",
-            "mesh_sweep": {"n": [32, 64, 128, 256]},
+            "mesh_sweep": {"n": [32, 64, 128, 256, 512, 1024]},
             "param_sweep": {},  # no problem-specific params yet
             "solver_sweep": {
                 "ksp": [
                     {"ksp_type": "cg", "extra": {}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 30}},
+                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 20}},
                     {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 50}},
+                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 100}},
+                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 150}},
+                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 200}},
                 ],
                 "pc": [
                     {"pc_type": "jacobi", "extra": {"pc_jacobi_type": "diagonal"}},
                     {"pc_type": "ilu", "extra": {"pc_factor_levels": 0}},
                     {"pc_type": "ilu", "extra": {"pc_factor_levels": 1}},
+                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 2}},
+                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 3}},
                     {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}},
+                    {"pc_type": "gamg", "extra": {"pc_gamg_type": "classical"}},
                 ],
                 "direct": [
-                    {"ksp_type": "preonly", "pc_type": "lu", "extra": {}},
-                    {"ksp_type": "preonly", "pc_type": "cholesky", "extra": {}},
+                    {"ksp_type": "preonly", "pc_type": "lu", "extra": {"pc_factor_mat_solver_type": "mumps"}},
+                    {"ksp_type": "preonly", "pc_type": "cholesky", "extra": {"pc_factor_mat_solver_type": "mumps"}},
                 ],
             },
         },
         "bratu": {
             "kind": "nonlinear",
-            "mesh_sweep": {"n": [32, 64, 128]},
-            "param_sweep": {"lambda": [1.0, 3.0, 5.0, 6.5]},
+            "mesh_sweep": {"n": [32, 64, 128, 256, 512, 1024]},
+            "param_sweep": {"lambda": [1.0, 3.0, 5.0, 6.5, 6.8]},
             "solver_sweep": {
                 "snes": [
-                    {"snes_type": "newtonls", "extra": {}},
+                    {"snes_type": "newtonls", "extra": {"snes_linesearch_type": "basic"}},
                     {"snes_type": "newtonls", "extra": {"snes_linesearch_type": "bt"}},
                     {"snes_type": "newtontr", "extra": {}},
                 ],
                 "ksp": [
-                    {"ksp_type": "gmres", "extra": {}},
+                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 30}},
+                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 100}},
+                    {"ksp_type": "bcgs", "extra": {}},
+                    {"ksp_type": "fgmres", "extra": {"ksp_gmres_restart": 50}},
                 ],
                 "pc": [
                     {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}},
-                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 0}},
+                    {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg", "pc_gamg_threshold": 0.05}},
+                    {"pc_type": "asm", "extra": {"pc_asm_overlap": 1}},
+                    {"pc_type": "asm", "extra": {"pc_asm_overlap": 2}},
                 ],
             },
         },
@@ -72,8 +83,19 @@ CONFIG = {
 
 
 def is_valid_combo(solver_flags: dict, nprocs: int) -> bool:
-    if nprocs > 1 and solver_flags.get("pc_type") == "ilu":
-        return False
+    """
+    Filter out invalid combinations of solvers and MPI process counts.
+    PETSc's native ILU, LU, and Cholesky preconditioners do not scale
+    beyond 1 process unless an external parallel package like MUMPS is used.
+    """
+    pc = solver_flags.get("pc_type")
+    mat_solver = solver_flags.get("pc_factor_mat_solver_type")
+
+    if nprocs > 1 and pc in ["ilu", "lu", "cholesky"]:
+        # Allow the run ONLY if a parallel external package is specified
+        if mat_solver not in ["mumps", "superlu_dist", "pastix"]:
+            return False
+
     return True
 
 
