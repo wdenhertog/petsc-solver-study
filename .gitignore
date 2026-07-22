@@ -52,6 +52,7 @@ Makefile
 install_manifest.txt
 compile_commands.json
 cmake-build-debug-wsl
+cmake-build-release-wsl
 
 # Temporary files
 *.tmp
@@ -71,6 +72,9 @@ Testing/
 
 # CLion
 .idea/
+
+# VScode
+.vscode
 
 # Benchmark output
 results/*/*.csv
