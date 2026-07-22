@@ -44,3 +44,26 @@ target_link_libraries(
         MPI::MPI_CXX
         PkgConfig::PETSC
 )
+
+find_package(Git QUIET)
+if (GIT_FOUND)
+    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+            OUTPUT_VARIABLE GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    execute_process(COMMAND ${GIT_EXECUTABLE} status --porcelain
+            OUTPUT_VARIABLE GIT_DIRTY_OUT OUTPUT_STRIP_TRAILING_WHITESPACE
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    if (GIT_DIRTY_OUT STREQUAL "")
+        set(GIT_DIRTY "0")
+    else ()
+        set(GIT_DIRTY "1")
+    endif ()
+else ()
+    set(GIT_SHA "unknown")
+    set(GIT_DIRTY "1")
+endif ()
+
+target_compile_definitions(benchmark PRIVATE
+        GIT_SHA="${GIT_SHA}"
+        GIT_DIRTY=${GIT_DIRTY}
+)

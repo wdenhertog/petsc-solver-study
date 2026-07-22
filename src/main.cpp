@@ -35,6 +35,11 @@ int main(int argc, char** argv)
 
     BenchmarkResult result;
     result.problem = problem->name();
+    result.git_sha = GIT_SHA;
+    result.git_dirty = GIT_DIRTY;
+    char petsc_ver[64];
+    PetscGetVersion(petsc_ver, sizeof(petsc_ver));
+    result.petsc_version = petsc_ver;
 
     switch (problem->kind())
     {

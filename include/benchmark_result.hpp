@@ -20,6 +20,9 @@ struct BenchmarkResult
     PetscLogDouble peak_memory_bytes = 0.0;
     PetscInt mpi_ranks = 1;
     PetscInt outer_iterations = 0;
+    std::string git_sha;
+    bool git_dirty = false;
+    std::string petsc_version;
 };
 
 std::string to_json(const BenchmarkResult& result);
