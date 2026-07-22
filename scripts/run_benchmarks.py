@@ -12,6 +12,9 @@ import itertools
 import json
 import subprocess
 from pathlib import Path
+import math
+import os
+import argparse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARK_BIN = REPO_ROOT / "bin" / "benchmark"
@@ -24,7 +27,6 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # Python-only objects) so the swap-over stays a one-liner.
 # ---------------------------------------------------------------------------
 CONFIG = {
-    "mpi": {"nprocs": [1, 2, 4, 8, 16]},
     "problems": {
         "poisson": {
             "kind": "linear",
@@ -80,6 +82,34 @@ CONFIG = {
         },
     },
 }
+
+SMOKE_TEST = os.environ.get("SMOKE_TEST", "0") == "1"
+
+if SMOKE_TEST:
+    CONFIG = {
+        "problems": {
+            "poisson": {
+                "kind": "linear",
+                "mesh_sweep": {"n": [64]},
+                "param_sweep": {},
+                "solver_sweep": {
+                    "ksp": [{"ksp_type": "cg", "extra": {}}],
+                    "pc": [{"pc_type": "jacobi", "extra": {"pc_jacobi_type": "diagonal"}}],
+                    "direct": [],
+                },
+            },
+            "bratu": {
+                "kind": "nonlinear",
+                "mesh_sweep": {"n": [64]},
+                "param_sweep": {"lambda": [3.0]},
+                "solver_sweep": {
+                    "snes": [{"snes_type": "newtonls", "extra": {"snes_linesearch_type": "bt"}}],
+                    "ksp": [{"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 30}}],
+                    "pc": [{"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}}],
+                },
+            },
+        },
+    }
 
 
 def is_valid_combo(solver_flags: dict, nprocs: int) -> bool:
@@ -189,6 +219,11 @@ def log(f, result: dict, **context):
 
 
 def main():
+    # 1. Setup Argparse for CLI flags
+    parser = argparse.ArgumentParser(description="Run PETSc Solver Benchmarks")
+    parser.add_argument("--dry-run", action="store_true", help="Print execution plan without running")
+    args = parser.parse_args()
+
     sha = (
         subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
@@ -196,8 +231,8 @@ def main():
         or "nogit"
     )
     ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    results_file = RESULTS_DIR / f"{ts}_{sha}.jsonl"
 
+    # 2. Build the baseline specs
     all_specs = []
     for name, cfg in CONFIG["problems"].items():
         specs = build_run_specs(name, cfg)
@@ -205,24 +240,62 @@ def main():
             s["problem_kind"] = cfg["kind"]
         all_specs.extend(specs)
 
-    total_runs = len(all_specs) * len(CONFIG["mpi"]["nprocs"])
-    print(f"Total runs: {total_runs} -> {results_file}")
+    # 3. Slurm Variables
+    array_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
+    array_count = int(os.environ.get("SLURM_ARRAY_TASK_COUNT", 1))
+    target_nprocs = int(os.environ.get("TARGET_NPROCS", 1))
 
+    # 4. Flatten the execution space ONLY for the requested nprocs
+    flat_jobs = []
+    for spec in all_specs:
+        if is_valid_combo(spec["solver"], target_nprocs):
+            flat_jobs.append((target_nprocs, spec))
+
+    # 5. Calculate the chunk slice
+    chunk_size = math.ceil(len(flat_jobs) / array_count)
+    start_idx = array_id * chunk_size
+    end_idx = min(start_idx + chunk_size, len(flat_jobs))
+    my_jobs = flat_jobs[start_idx:end_idx]
+
+    results_file = RESULTS_DIR / f"{ts}_{sha}_p{target_nprocs}_chunk_{array_id:04d}.jsonl"
+
+    # 6. Print the execution plan for verification
+    print("=" * 55)
+    print(f"TARGET_NPROCS:          {target_nprocs}")
+    print(f"TOTAL VALID JOBS:       {len(flat_jobs)}")
+    print(f"SLURM_ARRAY_TASK_COUNT: {array_count}")
+    print(f"CHUNK SIZE:             {chunk_size}")
+    print("=" * 55)
+    print(f"Array Task {array_id}/{array_count-1}:")
+    print(f"Assigned jobs {start_idx} to {end_idx-1} ({len(my_jobs)} runs) -> {results_file}")
+
+    if not my_jobs:
+        print("No jobs fall into this chunk. Exiting.")
+        return
+
+    # 7. Intercept execution if --dry-run is active
+    if args.dry_run:
+        print("\n[DRY RUN ENABLED] Previewing first 3 jobs in this chunk:")
+        for nprocs, spec in my_jobs[:3]:
+            # Print a clean summary of the solver parameters
+            solver_summary = f"{spec['solver'].get('ksp_type', 'N/A')} + {spec['solver'].get('pc_type', 'N/A')}"
+            print(f" -> {spec['problem']} | Mesh: {spec['mesh']} | Solver: {solver_summary}")
+        print("...\nDry run complete. No simulations were executed.")
+        return
+
+    # 8. Execute the chunk (Only reached if --dry-run is omitted)
     with open(results_file, "w") as f:
-        for nprocs in CONFIG["mpi"]["nprocs"]:
-            for spec in all_specs:
-                if not is_valid_combo(spec["solver"], nprocs):
-                    continue
-                result = run(spec, nprocs)
-                log(
-                    f,
-                    result,
-                    problem=spec["problem"],
-                    nprocs=nprocs,
-                    **spec["mesh"],
-                    **spec["param"],
-                    **spec["solver"],
-                )
+        for nprocs, spec in my_jobs:
+            result = run(spec, nprocs)
+            log(
+                f,
+                result,
+                problem=spec["problem"],
+                nprocs=nprocs,
+                **spec["mesh"],
+                **spec["param"],
+                **spec["solver"],
+            )
 
 
 if __name__ == "__main__":
