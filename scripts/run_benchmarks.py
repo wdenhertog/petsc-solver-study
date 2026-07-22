@@ -170,7 +170,7 @@ def main():
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                          capture_output=True, text=True, cwd=REPO_ROOT).stdout.strip() or "nogit"
     ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-    results_file = RESULTS_DIR / f"{sha}_{ts}.jsonl"
+    results_file = RESULTS_DIR / f"{ts}_{sha}.jsonl"
 
     all_specs = []
     for name, cfg in CONFIG["problems"].items():
