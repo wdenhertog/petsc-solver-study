@@ -1,9 +1,9 @@
 #include <iostream>
 #include <petscsys.h>
 
+#include "benchmark_result.hpp"
 #include "problem.hpp"
 #include "problem_registry.hpp"
-#include "benchmark_result.hpp"
 
 int main(int argc, char** argv)
 {
@@ -56,7 +56,6 @@ int main(int argc, char** argv)
         result.setup_time = t1 - t0;
         result.solve_time = t2 - t1;
         fill_solve_results(ksp, result);
-        fill_solver_config(ksp, result);
         VecGetSize(x, &result.dofs);
         break;
     }

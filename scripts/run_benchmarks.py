@@ -60,13 +60,13 @@ def log(f, result, **context):
     record = {**context, **result}
     f.write(json.dumps(record) + "\n")
     f.flush()
-    # ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
-    # if "error" in result:
-    #     print(f"{ctx_str}: ERROR - {result['error']}")
-    # else:
-    #     print(f"{ctx_str}: {result['iterations']} its, "
-    #           f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
-    #           f"success={result['success']}")
+    ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
+    if "error" in result:
+        print(f"{ctx_str}: ERROR - {result['error']}")
+    else:
+        print(f"{ctx_str}: {result['iterations']} its, "
+              f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
+              f"success={result['success']}")
 
 
 ksp_configs = build_ksp_configs()
