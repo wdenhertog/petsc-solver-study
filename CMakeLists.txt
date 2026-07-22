@@ -14,7 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(MPI REQUIRED)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET PETSc)
+pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET "PETSc>=3.21")
 
 add_executable(
         benchmark

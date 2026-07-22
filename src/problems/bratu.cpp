@@ -22,8 +22,8 @@ void BratuProblem::assemble_nonlinear(SNES snes, Vec& x)
     // These attach the local-array-style callbacks directly to the DM;
     // SNES queries the DM for F/J automatically — no SNESSetFunction/SNESSetJacobian needed.
     DMDASNESSetFunctionLocal(dm_, INSERT_VALUES,
-                             reinterpret_cast<DMDASNESFunction>(FormFunctionLocal), this);
-    DMDASNESSetJacobianLocal(dm_, reinterpret_cast<DMDASNESJacobian>(FormJacobianLocal), this);
+                             reinterpret_cast<DMDASNESFunctionFn*>(FormFunctionLocal), this);
+    DMDASNESSetJacobianLocal(dm_, reinterpret_cast<DMDASNESJacobianFn*>(FormJacobianLocal), this);
 
     DMCreateGlobalVector(dm_, &x);
     VecSet(x, 0.0); // zero initial guess; Newton moves via the forcing from lambda*exp(u)
