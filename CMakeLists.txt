@@ -34,9 +34,9 @@ set_target_properties(
 target_include_directories(
         benchmark
         PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/problems
-        ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(
