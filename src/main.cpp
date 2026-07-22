@@ -2,6 +2,7 @@
 #include <petscsys.h>
 
 #include "benchmark_result.hpp"
+#include "git_version.h"
 #include "problem.hpp"
 #include "problem_registry.hpp"
 

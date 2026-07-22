@@ -36,6 +36,7 @@ target_include_directories(
         PRIVATE
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/include/problems
+        ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(
@@ -46,24 +47,20 @@ target_link_libraries(
 )
 
 find_package(Git QUIET)
-if (GIT_FOUND)
-    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-            OUTPUT_VARIABLE GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-    execute_process(COMMAND ${GIT_EXECUTABLE} status --porcelain
-            OUTPUT_VARIABLE GIT_DIRTY_OUT OUTPUT_STRIP_TRAILING_WHITESPACE
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-    if (GIT_DIRTY_OUT STREQUAL "")
-        set(GIT_DIRTY "0")
-    else ()
-        set(GIT_DIRTY "1")
-    endif ()
-else ()
-    set(GIT_SHA "unknown")
-    set(GIT_DIRTY "1")
+if (NOT GIT_FOUND)
+    message(WARNING "Git not found. Build will use unknown git hashes.")
+    set(GIT_EXECUTABLE "echo") # Fallback to prevent script crash
 endif ()
 
-target_compile_definitions(benchmark PRIVATE
-        GIT_SHA="${GIT_SHA}"
-        GIT_DIRTY=${GIT_DIRTY}
+# Run the script on every build
+add_custom_target(
+        UpdateGitVersion
+        COMMAND ${CMAKE_COMMAND}
+        -DGIT_EXECUTABLE=${GIT_EXECUTABLE}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DGEN_HEADER=${CMAKE_CURRENT_BINARY_DIR}/git_version.h
+        -P ${CMAKE_SOURCE_DIR}/git_version.cmake
+        BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/git_version.h
 )
+
+add_dependencies(benchmark UpdateGitVersion)
