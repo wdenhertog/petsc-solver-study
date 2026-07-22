@@ -25,7 +25,6 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 CONFIG = {
     "mpi": {"nprocs": [1, 4]},
-
     "problems": {
         "poisson": {
             "kind": "linear",
@@ -107,11 +106,9 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
 
     if problem_cfg["kind"] == "linear":
         solver_combos = [
-                            flatten_extra(pc, ksp)
-                            for pc, ksp in itertools.product(
-                problem_cfg["solver_sweep"]["pc"], problem_cfg["solver_sweep"]["ksp"]
-            )
-                        ] + [flatten_extra(d) for d in problem_cfg["solver_sweep"].get("direct", [])]
+            flatten_extra(pc, ksp)
+            for pc, ksp in itertools.product(problem_cfg["solver_sweep"]["pc"], problem_cfg["solver_sweep"]["ksp"])
+        ] + [flatten_extra(d) for d in problem_cfg["solver_sweep"].get("direct", [])]
     elif problem_cfg["kind"] == "nonlinear":
         solver_combos = [
             flatten_extra(snes, ksp, pc)
@@ -126,18 +123,19 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
 
     specs = []
     for mesh, param, solver in itertools.product(mesh_combos, param_combos, solver_combos):
-        specs.append({
-            "problem": problem_name,
-            "mesh": mesh,
-            "param": param,
-            "solver": solver,
-        })
+        specs.append(
+            {
+                "problem": problem_name,
+                "mesh": mesh,
+                "param": param,
+                "solver": solver,
+            }
+        )
     return specs
 
 
 def run(spec: dict, nprocs: int, max_it: int = 3000) -> dict:
-    cmd = ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN),
-           "-problem", spec["problem"]]
+    cmd = ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN), "-problem", spec["problem"]]
     for k, v in spec["mesh"].items():
         cmd += [f"-{k}", str(v)]
     for k, v in spec["param"].items():
@@ -162,13 +160,19 @@ def log(f, result: dict, **context):
     if "error" in result:
         print(f"{ctx_str}: ERROR - {result['error']}")
     else:
-        print(f"{ctx_str}: {result.get('iterations')} its, "
-              f"solve={result.get('solve_time', 0):.4f}s, success={result.get('success')}")
+        print(
+            f"{ctx_str}: {result.get('iterations')} its, "
+            f"solve={result.get('solve_time', 0):.4f}s, success={result.get('success')}"
+        )
 
 
 def main():
-    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                         capture_output=True, text=True, cwd=REPO_ROOT).stdout.strip() or "nogit"
+    sha = (
+        subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
+        ).stdout.strip()
+        or "nogit"
+    )
     ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     results_file = RESULTS_DIR / f"{ts}_{sha}.jsonl"
 
@@ -188,9 +192,15 @@ def main():
                 if not is_valid_combo(spec["solver"], nprocs):
                     continue
                 result = run(spec, nprocs)
-                log(f, result,
-                    problem=spec["problem"], nprocs=nprocs,
-                    **spec["mesh"], **spec["param"], **spec["solver"])
+                log(
+                    f,
+                    result,
+                    problem=spec["problem"],
+                    nprocs=nprocs,
+                    **spec["mesh"],
+                    **spec["param"],
+                    **spec["solver"],
+                )
 
 
 if __name__ == "__main__":
