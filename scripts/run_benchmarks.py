@@ -219,18 +219,25 @@ def log(f, result: dict, **context):
 
 
 def main():
-    # 1. Setup Argparse for CLI flags
     parser = argparse.ArgumentParser(description="Run PETSc Solver Benchmarks")
     parser.add_argument("--dry-run", action="store_true", help="Print execution plan without running")
     args = parser.parse_args()
 
-    sha = (
-        subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
-        ).stdout.strip()
-        or "nogit"
-    )
-    ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    # Prefer a RUN_ID passed in from the submit script (keeps all nprocs/chunks
+    # of one sweep together); fall back to generating one locally for ad-hoc runs.
+    run_id = os.environ.get("RUN_ID")
+    if run_id is None:
+        sha = (
+            subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
+            ).stdout.strip()
+            or "nogit"
+        )
+        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        run_id = f"{ts}_{sha}"
+
+    run_dir = RESULTS_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     # 2. Build the baseline specs
     all_specs = []
@@ -257,7 +264,7 @@ def main():
     end_idx = min(start_idx + chunk_size, len(flat_jobs))
     my_jobs = flat_jobs[start_idx:end_idx]
 
-    results_file = RESULTS_DIR / f"{ts}_{sha}_p{target_nprocs}_chunk_{array_id:04d}.jsonl"
+    results_file = run_dir / f"p{target_nprocs}_chunk_{array_id:04d}.jsonl"
 
     # 6. Print the execution plan for verification
     print("=" * 55)
