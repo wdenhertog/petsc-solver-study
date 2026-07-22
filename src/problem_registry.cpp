@@ -1,8 +1,7 @@
 #include "problem_registry.hpp"
 
-// #include "problems/elasticity.hpp"
+#include "problems/bratu.hpp"
 #include "problems/poisson.hpp"
-// #include "problems/convection_diffusion.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -12,9 +11,7 @@ ProblemRegistry make_registry()
     ProblemRegistry registry;
 
     registry["poisson"] = [] { return std::make_unique<PoissonProblem>(); };
-    // registry["elasticity"] = [] { return std::make_unique<ElasticityProblem>(); };
-    // registry["convection_diffusion"] = [] { return
-    // std::make_unique<ConvectionDiffusionProblem>(); };
+    registry["bratu"] = [] { return std::make_unique<BratuProblem>(); };
 
     return registry;
 }

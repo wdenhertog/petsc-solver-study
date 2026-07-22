@@ -47,5 +47,9 @@ void fill_solve_results(SNES snes, BenchmarkResult& result)
     SNESGetLinearSolveIterations(snes, &total_linear_its);
     result.iterations = total_linear_its;
     SNESGetIterationNumber(snes, &result.outer_iterations);
+
+    Vec F;
+    SNESGetFunction(snes, &F, nullptr, nullptr);
+    VecNorm(F, NORM_2, &result.residual_norm);
     PetscMemoryGetMaximumUsage(&result.peak_memory_bytes);
 }

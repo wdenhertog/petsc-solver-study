@@ -22,6 +22,7 @@ add_executable(
         src/benchmark_result.cpp
         src/problem_registry.cpp
         src/problems/poisson.cpp
+        src/problems/bratu.cpp
 )
 
 set_target_properties(
