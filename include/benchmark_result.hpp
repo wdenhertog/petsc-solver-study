@@ -9,7 +9,6 @@
 struct BenchmarkResult
 {
     std::string problem;
-    std::string ksp_type;
     PetscInt mesh_size = 0;
     PetscInt dofs = 0;
     PetscInt iterations = 0;

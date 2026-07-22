@@ -41,6 +41,9 @@ void PoissonProblem::assemble_linear(Mat& A, Vec& b, Vec& x)
 
     double h = 1.0 / (n - 1);
 
+    PetscScalar** barray;
+    DMDAVecGetArray(dm_, b, &barray);
+
     for (PetscInt j = ys; j < ys + ym; ++j)
     {
         for (PetscInt i = xs; i < xs + xm; ++i)
@@ -55,7 +58,7 @@ void PoissonProblem::assemble_linear(Mat& A, Vec& b, Vec& x)
             {
                 PetscScalar one = 1.0;
                 MatSetValuesStencil(A, 1, &row, 1, &row, &one, INSERT_VALUES);
-                VecSetValue(b, j * n + i, 0.0, INSERT_VALUES);
+                barray[j][i] = 0.0;
                 continue;
             }
 
@@ -75,15 +78,13 @@ void PoissonProblem::assemble_linear(Mat& A, Vec& b, Vec& x)
 
             MatSetValuesStencil(A, 1, &row, 5, col, val, INSERT_VALUES);
 
-            double rhs = forcing(i * h, j * h);
-            VecSetValue(b, j * n + i, rhs, INSERT_VALUES);
+            barray[j][i] = forcing(i * h, j * h);
         }
     }
+    DMDAVecRestoreArray(dm_, b, &barray);
 
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-    VecAssemblyBegin(b);
-    VecAssemblyEnd(b);
 
     VecGetSize(x, &dofs_);
 }

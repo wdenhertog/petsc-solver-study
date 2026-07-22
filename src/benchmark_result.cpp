@@ -8,7 +8,6 @@ std::string to_json(const BenchmarkResult& result)
     std::ostringstream oss;
     oss << "{\n";
     oss << "    \"problem\": \"" << result.problem << "\",\n";
-    oss << "    \"ksp\": \"" << result.ksp_type << "\",\n";
     oss << "    \"dofs\": " << result.dofs << ",\n";
     oss << "    \"iterations\": " << result.iterations << ",\n";
     oss << "    \"residual\": " << result.residual_norm << ",\n";
@@ -18,7 +17,7 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"success\": " << result.success << ",\n";
     oss << "    \"converged_reason\": " << result.converged_reason << ",\n";
     oss << "    \"converged_reason_string\": \"" << result.converged_reason_string << "\",\n";
-    oss << "    \"outer iterations\": " << result.outer_iterations << "\n";
+    oss << "    \"outer_iterations\": " << result.outer_iterations << "\n";
     oss << "}";
     return oss.str();
 }

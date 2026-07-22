@@ -60,13 +60,36 @@ int main(int argc, char** argv)
         break;
     }
     case ProblemKind::Nonlinear:
-    { /* SNESSolve, analogous */
+    {
+        Vec x;
+        SNES snes;
+        SNESCreate(PETSC_COMM_WORLD, &snes);
+        problem->assemble_nonlinear(snes, x);
+        SNESSetFromOptions(snes);
+        PetscLogDouble t0, t1, t2;
+        PetscTime(&t0);
+        SNESSetUp(snes);
+        PetscTime(&t1);
+        SNESSolve(snes, nullptr, x);
+        PetscTime(&t2);
+        result.setup_time = t1 - t0;
+        result.solve_time = t2 - t1;
+        fill_solve_results(snes, result);
+        VecGetSize(x, &result.dofs);
+        SNESDestroy(&snes);
+        break;
     }
     case ProblemKind::VariationalInequality:
-    { /* SNESVISetVariableBounds + SNESSolve */
+    {
+        break;
     }
     }
 
-    std::cout << to_json(result) << std::endl;
+    PetscMPIInt rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (rank == 0)
+    {
+        std::cout << to_json(result) << std::endl;
+    }
     PetscFinalize();
 }
