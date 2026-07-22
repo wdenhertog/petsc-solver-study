@@ -9,11 +9,11 @@ RESULTS_FILE = REPO_ROOT / "results" / "json" / "benchmarks.jsonl"
 
 RESULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-mesh_sizes = [32, 64, 128, 256, 512, 1024]
-gmres_restarts = [30, 50, 75, 100, 150, 200]
-jacobi_types = ["diagonal", "rowmax", "rowsum"]
-ilu_levels = [0, 1, 2, 3]
-gamg_types = ["agg", "classical"]
+mesh_sizes = [32, 64]
+gmres_restarts = [30, 50]
+jacobi_types = ["diagonal"]
+ilu_levels = [0, 1]
+gamg_types = ["agg"]
 
 
 def build_ksp_configs():
@@ -57,15 +57,16 @@ def run(problem, n, pc_config, ksp_config, max_it=3000):
 
 
 def log(f, result, **context):
-    f.write(json.dumps(result) + "\n")
+    record = {**context, **result}
+    f.write(json.dumps(record) + "\n")
     f.flush()
-    ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
-    if "error" in result:
-        print(f"{ctx_str}: ERROR - {result['error']}")
-    else:
-        print(f"{ctx_str}: {result['iterations']} its, "
-              f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
-              f"success={result['success']}")
+    # ctx_str = " ".join(f"{k}={v}" for k, v in context.items())
+    # if "error" in result:
+    #     print(f"{ctx_str}: ERROR - {result['error']}")
+    # else:
+    #     print(f"{ctx_str}: {result['iterations']} its, "
+    #           f"setup={result.get('setup_time', 0):.4f}s, solve={result['solve_time']:.4f}s, "
+    #           f"success={result['success']}")
 
 
 ksp_configs = build_ksp_configs()

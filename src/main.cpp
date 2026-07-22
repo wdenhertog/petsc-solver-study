@@ -1,9 +1,9 @@
 #include <iostream>
 #include <petscsys.h>
 
-#include "linear_system.hpp"
 #include "problem.hpp"
 #include "problem_registry.hpp"
+#include "benchmark_result.hpp"
 
 int main(int argc, char** argv)
 {
