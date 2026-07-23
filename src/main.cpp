@@ -91,6 +91,7 @@ int main(int argc, char** argv)
     }
     }
 
+    fill_memory_usage(result);
     PetscMPIInt rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     if (rank == 0)

@@ -18,6 +18,7 @@ struct BenchmarkResult
     PetscBool success;
     PetscReal residual_norm = 0.0;
     PetscLogDouble peak_memory_bytes = 0.0;
+    PetscLogDouble total_memory_bytes = 0.0;
     PetscInt mpi_ranks = 1;
     PetscInt outer_iterations = 0;
     std::string git_sha;
@@ -28,3 +29,4 @@ struct BenchmarkResult
 std::string to_json(const BenchmarkResult& result);
 void fill_solve_results(KSP ksp, BenchmarkResult& result);
 void fill_solve_results(SNES snes, BenchmarkResult& result);
+void fill_memory_usage(BenchmarkResult& result);

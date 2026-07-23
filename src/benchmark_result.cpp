@@ -1,5 +1,6 @@
 #include "benchmark_result.hpp"
 
+#include <mpi.h>
 #include <petscksp.h>
 #include <sstream>
 
@@ -14,6 +15,7 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"setup_time\": " << result.setup_time << ",\n";
     oss << "    \"solve_time\": " << result.solve_time << ",\n";
     oss << "    \"peak_memory_bytes\": " << result.peak_memory_bytes << ",\n";
+    oss << "    \"total_memory_bytes\": " << result.total_memory_bytes << ",\n";
     oss << "    \"success\": " << result.success << ",\n";
     oss << "    \"converged_reason\": " << result.converged_reason << ",\n";
     oss << "    \"converged_reason_string\": \"" << result.converged_reason_string << "\",\n";
@@ -29,7 +31,6 @@ void fill_solve_results(KSP ksp, BenchmarkResult& result)
 {
     KSPGetIterationNumber(ksp, &result.iterations);
     KSPGetResidualNorm(ksp, &result.residual_norm);
-    PetscMemoryGetMaximumUsage(&result.peak_memory_bytes);
 
     KSPConvergedReason reason;
     KSPGetConvergedReason(ksp, &reason);
@@ -54,5 +55,17 @@ void fill_solve_results(SNES snes, BenchmarkResult& result)
     Vec F;
     SNESGetFunction(snes, &F, nullptr, nullptr);
     VecNorm(F, NORM_2, &result.residual_norm);
-    PetscMemoryGetMaximumUsage(&result.peak_memory_bytes);
+}
+
+void fill_memory_usage(BenchmarkResult& result)
+{
+    PetscLogDouble local_mem;
+    PetscMemoryGetMaximumUsage(&local_mem);
+
+    PetscLogDouble max_mem = 0.0, sum_mem = 0.0;
+    MPI_Reduce(&local_mem, &max_mem, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&local_mem, &sum_mem, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    result.peak_memory_bytes = max_mem;
+    result.total_memory_bytes = sum_mem;
 }
