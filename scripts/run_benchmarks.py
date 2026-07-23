@@ -48,7 +48,7 @@ CONFIG = {
                     {"pc_type": "ilu", "extra": {"pc_factor_levels": 2}},
                     {"pc_type": "ilu", "extra": {"pc_factor_levels": 3}},
                     {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}},
-                    {"pc_type": "gamg", "extra": {"pc_gamg_type": "classical"}},
+                    # {"pc_type": "gamg", "extra": {"pc_gamg_type": "classical"}},
                 ],
                 "direct": [
                     {"ksp_type": "preonly", "pc_type": "lu", "extra": {"pc_factor_mat_solver_type": "mumps"}},
@@ -186,7 +186,7 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
     return specs
 
 
-def run(spec: dict, nprocs: int, max_it: int = 3000) -> dict:
+def run(spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, timeout_s=300) -> dict:
     cmd = ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN), "-problem", spec["problem"]]
     for k, v in spec["mesh"].items():
         cmd += [f"-{k}", str(v)]
@@ -196,8 +196,14 @@ def run(spec: dict, nprocs: int, max_it: int = 3000) -> dict:
         cmd += [f"-{k}", str(v)]
     if spec["problem_kind"] == "linear":
         cmd += ["-ksp_max_it", str(max_it)]
+    elif spec["problem_kind"] == "nonlinear":
+        cmd += ["-snes_max_it", str(snes_max_it), "-ksp_max_it", str(max_it)]
 
-    out = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return {"error": f"Command timed out after {timeout_s} seconds", "timed_out": True}
+
     try:
         return json.loads(out.stdout)
     except json.JSONDecodeError:
