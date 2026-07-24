@@ -77,10 +77,10 @@ Testing/
 .vscode
 
 # Benchmark output
-results/*/*.csv
-results/*/*.json
+*.csv
+*.json
 *.jsonl
-results/*/*.png
+*.png
 
 # PETSc logs
 *.petsc
