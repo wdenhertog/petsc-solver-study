@@ -90,3 +90,6 @@ bin/
 .pixi/*
 !.pixi/config.toml
 __pycache__/
+
+# config files
+config.yaml
