@@ -58,7 +58,7 @@ pixi run benchmark
 Run with custom config:
 
 ```bash
-pixi run benchmark -- --config configs/benchmarks/my_campaign.yaml
+pixi run benchmark --config configs/benchmarks/my_campaign.yaml
 ```
 
 Each run folder under [results/json](results/json) includes:
@@ -108,9 +108,20 @@ Typical flow:
 
 1. Add a problem implementation in [src/problems](src/problems).
 2. Add headers in [include/problems](include/problems).
-3. Register the problem in the registry.
+3. Register the problem in the registry in [src/problem_registry.cpp](src/problem_registry.cpp).
 4. Add a config entry in YAML under problems.
-5. Run a smoke campaign.
+5. Run a quick smoke campaign to validate wiring and solver options.
+6. Run your desired benchmark campaign.
+
+Example commands:
+
+```bash
+# quick smoke check
+pixi run benchmark --config configs/benchmarks/smoke.yaml --dry-run
+
+# full campaign
+pixi run benchmark --config configs/benchmarks/default.yaml
+```
 
 ### Python Problems (UFL/FEniCSx)
 
