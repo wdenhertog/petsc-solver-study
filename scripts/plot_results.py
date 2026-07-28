@@ -191,7 +191,7 @@ def best_of_per_group(df: pd.DataFrame, group_cols: list[str], x_col: str, metri
 # ---------------------------------------------------------------------------
 
 
-def plot_iterations_vs_dofs(df: pd.DataFrame, problem: str, out_dir: Path, nprocs: int, lam, metric: str):
+def plot_iterations_vs_dofs(df: pd.DataFrame, problem: str, nprocs: int, lam, metric: str):
     sub = df[df["success"] == True]  # noqa: E712
     sub = apply_instance_filter(sub, nprocs=nprocs, lam=lam)
     if sub.empty:
@@ -216,8 +216,7 @@ def plot_iterations_vs_dofs(df: pd.DataFrame, problem: str, out_dir: Path, nproc
         f"Flat = algorithmically optimal preconditioner. Each line: best sub-config per family."
     )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    fig.savefig(out_dir / "iterations_vs_dofs.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +224,7 @@ def plot_iterations_vs_dofs(df: pd.DataFrame, problem: str, out_dir: Path, nproc
 # ---------------------------------------------------------------------------
 
 
-def plot_success_rate(df: pd.DataFrame, problem: str, out_dir: Path):
+def plot_success_rate(df: pd.DataFrame, problem: str):
     sub = df.copy()
     if sub.empty:
         print("  [success_rate] no rows, skipping")
@@ -245,8 +244,7 @@ def plot_success_rate(df: pd.DataFrame, problem: str, out_dir: Path):
     ax.set_title(
         f"{problem}: success rate by solver family\n(across all mesh sizes / nprocs / params / sub-tunings in this run)"
     )
-    fig.savefig(out_dir / "success_rate.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +264,7 @@ def pareto_front(points: pd.DataFrame, x_col: str, y_col: str) -> pd.DataFrame:
     return pd.DataFrame(front_rows)
 
 
-def plot_pareto(df: pd.DataFrame, problem: str, out_dir: Path, n: int, nprocs: int, lam, memory_metric: str):
+def plot_pareto(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam, memory_metric: str):
     sub = df[df["success"] == True]  # noqa: E712
     sub = apply_instance_filter(sub, n=n, nprocs=nprocs, lam=lam)
     if sub.empty:
@@ -287,8 +285,7 @@ def plot_pareto(df: pd.DataFrame, problem: str, out_dir: Path, n: int, nprocs: i
     )
     ax.set_title(f"{problem}: solve_time vs {memory_metric} ({metric_note})\n(n={n}, nprocs={nprocs}{lam_str})")
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    fig.savefig(out_dir / "pareto.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +293,7 @@ def plot_pareto(df: pd.DataFrame, problem: str, out_dir: Path, n: int, nprocs: i
 # ---------------------------------------------------------------------------
 
 
-def plot_setup_vs_solve(df: pd.DataFrame, problem: str, out_dir: Path, n: int, nprocs: int, lam):
+def plot_setup_vs_solve(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam):
     sub = df[df["success"] == True]  # noqa: E712
     sub = apply_instance_filter(sub, n=n, nprocs=nprocs, lam=lam)
     if sub.empty:
@@ -314,8 +311,7 @@ def plot_setup_vs_solve(df: pd.DataFrame, problem: str, out_dir: Path, n: int, n
     lam_str = f", lambda={lam}" if lam is not None else ""
     ax.set_title(f"{problem}: setup vs solve time (n={n}, nprocs={nprocs}{lam_str})")
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    fig.savefig(out_dir / "setup_vs_solve.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +319,7 @@ def plot_setup_vs_solve(df: pd.DataFrame, problem: str, out_dir: Path, n: int, n
 # ---------------------------------------------------------------------------
 
 
-def plot_strong_scaling(df: pd.DataFrame, problem: str, out_dir: Path, n: int, lam):
+def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, lam):
     sub = df[df["success"] == True]  # noqa: E712
     sub = apply_instance_filter(sub, n=n, lam=lam)
     if sub.empty:
@@ -357,8 +353,7 @@ def plot_strong_scaling(df: pd.DataFrame, problem: str, out_dir: Path, n: int, l
         f"{problem}: strong scaling (n={n}{lam_str}, fixed problem size)\nEach line: best sub-config per family, per nprocs"
     )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    fig.savefig(out_dir / "strong_scaling.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -366,7 +361,7 @@ def plot_strong_scaling(df: pd.DataFrame, problem: str, out_dir: Path, n: int, l
 # ---------------------------------------------------------------------------
 
 
-def plot_memory_scaling(df: pd.DataFrame, problem: str, out_dir: Path, n: int, lam):
+def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, lam):
     sub = df[df["success"] == True]  # noqa: E712
     sub = apply_instance_filter(sub, n=n, lam=lam)
     if sub.empty:
@@ -418,8 +413,7 @@ def plot_memory_scaling(df: pd.DataFrame, problem: str, out_dir: Path, n: int, l
         f"Solid=peak (per-rank max, falling is good) — Dashed=total (whole-job sum, rising is overhead cost)"
     )
     ax.legend(fontsize=7, loc="upper left", bbox_to_anchor=(1.02, 1.0))
-    fig.savefig(out_dir / "memory_scaling.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +428,14 @@ def pick_default_n(df: pd.DataFrame) -> int:
     if full_coverage.empty:
         return int(df["n"].median())
     return int(full_coverage.index.max())
+
+
+def save_fig(fig, out_dir: Path, name: str, plot_label: str):
+    if fig is None:
+        print(f"  [{plot_label}] no figure produced (see message above), skipping save")
+        return
+    fig.savefig(out_dir / f"{name}.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 def main():
@@ -518,17 +520,23 @@ def main():
         out_dir.mkdir(parents=True, exist_ok=True)
 
         if "iterations_vs_dofs" in args.plots:
-            plot_iterations_vs_dofs(sub, problem, out_dir, nprocs=args.nprocs, lam=lam, metric=args.iter_metric)
+            fig = plot_iterations_vs_dofs(sub, problem, nprocs=args.nprocs, lam=lam, metric=args.iter_metric)
+            save_fig(fig, out_dir, "iterations_vs_dofs", "iterations_vs_dofs")
         if "success_rate" in args.plots:
-            plot_success_rate(sub, problem, out_dir)
+            fig = plot_success_rate(sub, problem)
+            save_fig(fig, out_dir, "success_rate", "success_rate")
         if "pareto" in args.plots:
-            plot_pareto(sub, problem, out_dir, n=n, nprocs=args.nprocs, lam=lam, memory_metric=args.memory_metric)
+            fig = plot_pareto(sub, problem, n=n, nprocs=args.nprocs, lam=lam, memory_metric=args.memory_metric)
+            save_fig(fig, out_dir, "pareto", "pareto")
         if "setup_vs_solve" in args.plots:
-            plot_setup_vs_solve(sub, problem, out_dir, n=n, nprocs=args.nprocs, lam=lam)
+            fig = plot_setup_vs_solve(sub, problem, n=n, nprocs=args.nprocs, lam=lam)
+            save_fig(fig, out_dir, "setup_vs_solve", "setup_vs_solve")
         if "strong_scaling" in args.plots:
-            plot_strong_scaling(sub, problem, out_dir, n=n, lam=lam)
+            fig = plot_strong_scaling(sub, problem, n=n, lam=lam)
+            save_fig(fig, out_dir, "strong_scaling", "strong_scaling")
         if "memory_scaling" in args.plots:
-            plot_memory_scaling(sub, problem, out_dir, n=n, lam=lam)
+            fig = plot_memory_scaling(sub, problem, n=n, lam=lam)
+            save_fig(fig, out_dir, "memory_scaling", "memory_scaling")
 
         print(
             f"  wrote plots to {out_dir} (legend grouped by {legend_cols}"
