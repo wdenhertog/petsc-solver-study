@@ -86,3 +86,6 @@ Testing/
 *.petsc
 
 bin/
+# pixi environments
+.pixi/*
+!.pixi/config.toml

@@ -1,0 +1,23 @@
+[workspace]
+authors = ["Wilbert den Hertog <wilbert.denhertog@uhasselt.be>"]
+channels = ["conda-forge"]
+name = "petsc-solver-study"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+# Run the benchmark cross-product
+benchmark = "python scripts/run_benchmarks.py"
+
+# Generate static diagnostic plots
+plot = "python scripts/plot_results.py"
+
+# Launch the interactive analysis dashboard
+dashboard = "streamlit run scripts/dashboard.py"
+
+[dependencies]
+python = "3.12.*"
+pandas = ">=3.0.3,<4"
+matplotlib = ">=3.11.1,<4"
+plotly = ">=6.9.0,<7"
+streamlit = ">=1.60.0,<2"
