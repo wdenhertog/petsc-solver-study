@@ -1,513 +1,237 @@
 # petsc-solver-study
 
-A personal project for learning modern C++, PETSc, MPI, and scientific computing from first principles.
+Config-driven PETSc benchmarking for PDE problems, with two authoring paths:
 
-The goal of this repository is to develop a deep understanding of PETSc by studying increasingly complex classes of linear and nonlinear systems arising from the discretization of partial differential equations.
+- C++ problems implemented directly against PETSc
+- Python problems defined with UFL and solved with FEniCSx/PETSc
 
-The project follows a progression based on algebraic complexity rather than physical complexity:
+The goal is to benchmark solver and preconditioner choices in a reproducible way, on your own problems, with your own parameter sweeps.
 
-SPD systems
-→ Non-symmetric systems
-→ Nonlinear systems
-→ Saddle-point systems
-→ Incompressible flow
-→ Variational inequalities
-→ Large-scale parallel computations
+## What This Project Is
 
-Rather than only using PETSc through FEniCSx, this project focuses on working directly with PETSc in C++ to understand the underlying algorithms and solver infrastructure.
+This repository is evolving from a personal PETSc study project into a benchmarking framework.
 
----
+You should be able to:
 
-## Objectives
+- Add a new PDE problem in C++ or Python
+- Describe benchmark campaigns in YAML
+- Sweep mesh/problem/solver settings
+- Collect results as JSONL, CSV, and plots
+- Explore runs in a Streamlit dashboard
 
-This repository aims to answer questions such as:
+## Current Status
 
-- Why does CG require SPD matrices?
-- When should GMRES be preferred over BiCGStab?
-- How important is the choice of preconditioner?
-- Why is AMG effective for elliptic problems?
-- How do nonlinear solver strategies affect convergence?
-- How does solver performance change with mesh size?
-- How efficiently do PETSc solvers scale across multiple MPI processes?
+- C++ benchmark pipeline: implemented
+- YAML campaign configs: implemented
+- Run-level config snapshot to results: implemented
+- Dynamic dashboard instance controls from config/data: implemented
+- Generic ranking by inferred instance columns: implemented
+- Python UFL/FEniCSx problem backend: planned next major step
 
----
+## Core Workflow
 
-## Benchmarking Philosophy
+1. Define a benchmark campaign in YAML.
+2. Run the campaign (single node or cluster array chunks).
+3. Each run writes JSONL records and snapshots the effective config to the run folder.
+4. Post-process with ranking and plots.
+5. Explore interactively in the dashboard.
 
-A central goal of this project is not only to understand individual PETSc components, but also to compare them quantitatively.
+Planned automation for cluster runs:
 
-Whenever possible, solver configurations will be benchmarked against each other across multiple problem classes, mesh sizes, and MPI process counts.
+- Generate a Slurm array submission file directly from the campaign YAML
+- Generate a companion bash launcher/wrapper script from the same config
+- Keep generated job settings (array size, nprocs targets, run id wiring) consistent with the benchmark plan
 
-The objective is to identify:
+## Campaign Configs
 
-- Which solvers converge reliably
-- Which preconditioners provide the best performance
-- How performance changes with problem size
-- How solver choices depend on matrix properties
-- How scalability changes with increasing parallelism
+Default campaign files live in:
 
-All studies will be performed using reproducible benchmark suites and automated result collection.
+- [configs/benchmarks/default.yaml](configs/benchmarks/default.yaml)
+- [configs/benchmarks/smoke.yaml](configs/benchmarks/smoke.yaml)
 
----
-
-## Benchmark Config Workflow
-
-Benchmark sweeps are configured with YAML files in [configs/benchmarks/default.yaml](configs/benchmarks/default.yaml) and [configs/benchmarks/smoke.yaml](configs/benchmarks/smoke.yaml).
-
-Run with the default config:
+Run with default config:
 
 ```bash
 pixi run benchmark
 ```
 
-Run with a custom config:
+Run with custom config:
 
 ```bash
 pixi run benchmark -- --config configs/benchmarks/my_campaign.yaml
 ```
 
-Each run copies the active config into its result folder as [results/json/<run_id>/config.yaml](results/json), so the dashboard and post-processing tools can reconstruct the exact parameter sweep used for that run.
-
----
-
-## Planned Studies
-
-### Linear Solvers (KSP)
-
-Investigate:
-
-- CG
-- GMRES
-- BiCGStab
-- MINRES
-- PREONLY
-
-Benchmark Metrics:
-
-- Iteration count
-- Solve time
-- Setup time
-- Memory usage
-- Convergence behavior
-- Time-to-solution
-
----
-
-### Preconditioners (PC)
-
-Investigate:
-
-- Jacobi
-- SOR
-- ILU
-- LU
-- GAMG
-- Hypre BoomerAMG
-
-Study:
-
-- Robustness
-- Scalability
-- Sensitivity to problem type
-
----
-
-### Nonlinear Solvers (SNES)
-
-Classical nonlinear methods:
-
-- Newton Line Search (`newtonls`)
-- Newton Trust Region (`newtontr`)
-- Quasi-Newton (`qn`)
-- Nonlinear GMRES (`ngmres`)
-
-Metrics:
-
-- Newton iterations
-- Linear iterations per Newton step
-- Total solve time
-- Robustness to poor initial guesses
-
----
-
-### Variational Inequality Solvers (SNESVI)
-
-Investigate:
-
-- Reduced-Space Active Set (`vinewtonrsls`)
-- Semi-Smooth Active Set (`vinewtonssls`)
-
-Applications:
-
-- Obstacle problems
-- Contact mechanics
-- Damage irreversibility
-- Phase-field fracture
-- Constrained optimization
-
-Metrics:
-
-- Active set evolution
-- Nonlinear iterations
-- Robustness
-- Constraint satisfaction
-
----
-
-## Problems
-
-The study progresses through increasingly challenging algebraic structures.
-
-### Poisson Equation
-
-Properties:
-
-- Linear
-- Symmetric
-- Positive Definite (SPD)
-
-Purpose:
-
-- PETSc fundamentals
-- CG
-- AMG
-- Hypre
-
----
-
-### Linear Elasticity
-
-Properties:
-
-- Linear
-- SPD
-- Vector-valued
-
-Purpose:
-
-- Block structures
-- AMG robustness
-- Larger systems
-
----
-
-### Convection-Diffusion
-
-Properties:
-
-- Linear
-- Non-symmetric
-
-Purpose:
-
-- GMRES
-- BiCGStab
-- Preconditioner sensitivity
-
----
-
-### Nonlinear Poisson
-
-Properties:
-
-- Nonlinear
-
-Purpose:
-
-- SNES
-- Newton methods
-- Convergence studies
-
----
-
-### Stokes Flow
-
-Properties:
-
-- Saddle-point system
-- Indefinite matrix
-
-Purpose:
-
-- FieldSplit
-- Schur complements
-- Block preconditioners
-
----
-
-### Navier-Stokes
-
-Properties:
-
-- Nonlinear
-- Non-symmetric
-- Saddle-point structure
-
-Purpose:
-
-- Realistic solver strategies
-- Coupled nonlinear systems
-- Advanced preconditioning
-
----
-
-### Variational Inequality Problems
-
-Examples:
-
-- Obstacle problems
-- Contact mechanics
-- Phase-field fracture
-- Damage irreversibility
-
-Purpose:
-
-- SNESVI
-- Active-set methods
-- Constraint handling
-
----
-
-## Benchmark Studies
-
-For each problem, benchmark campaigns will compare combinations of:
-
-### Solvers
-
-- CG
-- GMRES
-- BiCGStab
-- MINRES
-- PREONLY
-
-### Preconditioners
-
-- Jacobi
-- SOR
-- ILU
-- LU
-- GAMG
-- Hypre BoomerAMG
-
-### Nonlinear Methods
-
-- newtonls
-- newtontr
-- qn
-- ngmres
-- vinewtonrsls
-- vinewtonssls
-
-### Study Dimensions
-
-- Problem type
-- Mesh size
-- Degrees of freedom
-- 2D versus 3D
-- Number of MPI processes
-
-Benchmark results will be exported to machine-readable formats (CSV or JSON) to enable automated post-processing, plotting, and report generation.
-
----
-
-## Mesh Refinement Studies
-
-Planned mesh sizes:
-
-- 32 × 32
-- 64 × 64
-- 128 × 128
-- 256 × 256
-- 512 × 512
-
-Metrics:
-
-- Degrees of freedom
-- Iteration count
-- Runtime
-- Memory consumption
-
-Goal:
-
-- Understand algorithmic scalability
-- Investigate mesh-independent convergence
-
----
-
-## Three-Dimensional Studies
-
-Selected problems will eventually be extended to three dimensions.
-
-Goals:
-
-- Study memory consumption
-- Compare direct and iterative methods
-- Investigate scalability at larger problem sizes
-- Prepare for realistic HPC workloads
-
-Target scales:
-
-- 10⁶ DOFs
-- 10⁷ DOFs
-- 10⁸ DOFs
-
----
-
-## Parallel Performance Studies
-
-### Strong Scaling
-
-Fixed problem size.
-
-Example:
-
-- 1 process
-- 2 processes
-- 4 processes
-- 8 processes
-- 16 processes
-
-Measure:
-
-- Assembly time
-- Solve time
-- Speedup
-- Parallel efficiency
-
----
-
-### Weak Scaling
-
-Problem size increases with the number of MPI processes.
-
-Measure:
-
-- Runtime growth
-- Parallel efficiency
-- Communication overhead
-
----
-
-## Project Structure
-
-```text
-petsc-solver-study/
-│
-├── include/
-├── src/
-│
-├── problems/
-│   ├── poisson/
-│   ├── elasticity/
-│   ├── convection_diffusion/
-│   ├── nonlinear_poisson/
-│   ├── stokes/
-│   ├── navier_stokes/
-│   └── variational_inequalities/
-│
-├── docs/
-├── results/
-├── reports/
-└── scripts/
+Each run folder under [results/json](results/json) includes:
+
+- chunk JSONL files
+- a copied [config.yaml](results/json) snapshot for reproducibility
+
+The copied config contains metadata and stores source config as a repo-relative path for privacy.
+
+## Config Shape
+
+Today, campaigns are problem-centric and solver-sweep-centric:
+
+```yaml
+problems:
+  poisson:
+    kind: linear
+    mesh_sweep:
+      n: [64, 128, 256]
+    param_sweep: {}
+    labels:
+      n: Mesh size (n)
+    solver_sweep:
+      ksp:
+        - ksp_type: cg
+          extra: {}
+      pc:
+        - pc_type: gamg
+          extra:
+            pc_gamg_type: agg
+      direct: []
 ```
 
----
+Key points:
 
-## Learning Log
+- mesh_sweep and param_sweep define the problem instance dimensions
+- solver_sweep defines how PETSc is configured
+- labels lets the dashboard render human-friendly control names
 
-The repository will also serve as a study journal documenting:
+## Problem Authoring: C++ and Python
 
-- PETSc concepts
-- Numerical linear algebra notes
-- Solver observations
-- Benchmark results
-- Lessons learned
+### C++ Problems
 
----
+C++ problems are compiled into the benchmark binary and selected by problem name from YAML.
+
+Typical flow:
+
+1. Add a problem implementation in [src/problems](src/problems).
+2. Add headers in [include/problems](include/problems).
+3. Register the problem in the registry.
+4. Add a config entry in YAML under problems.
+5. Run a smoke campaign.
+
+### Python Problems (UFL/FEniCSx)
+
+Planned direction:
+
+- Define variational forms in UFL
+- Assemble/solve through FEniCSx with PETSc backends
+- Emit benchmark records in the same schema as C++ runs
+- Reuse the same ranking, plotting, and dashboard stack
+
+Design goal:
+
+- one benchmark config format
+- multiple problem backends
+- shared output format and analysis tools
+
+## Benchmark Outputs
+
+Raw results:
+
+- [results/json](results/json): line-delimited JSON records per run chunk
+
+Derived outputs:
+
+- [results/csv](results/csv): ranked tables
+- [results/plots](results/plots): static PNG diagnostics
+
+## Analysis and Visualization
+
+Generate static plots:
+
+```bash
+pixi run plot
+```
+
+Generate rankings:
+
+```bash
+pixi run python scripts/rank_results.py
+```
+
+Launch interactive dashboard:
+
+```bash
+pixi run dashboard
+```
+
+The dashboard reads each run folder's copied config and builds problem-instance controls dynamically.
+
+## HPC Execution (Current)
+
+Current cluster workflow uses two handwritten scripts:
+
+- `submit_benchmarks.sh`: creates one shared `RUN_ID` and submits one Slurm array per MPI size (`1, 2, 4, 8, 16`)
+- `petsc_benchmark_array.slurm`: executes one array task and runs `run_benchmarks.py` with exported `TARGET_NPROCS` and `RUN_ID`
+
+This is a good baseline and already matches the benchmark runner contract:
+
+- `RUN_ID` keeps all chunks across MPI sizes grouped in one run folder
+- `TARGET_NPROCS` selects which MPI-size slice each array submission executes
+- `SLURM_ARRAY_TASK_ID` and `SLURM_ARRAY_TASK_COUNT` drive chunk partitioning
+
+## HPC Execution (Planned Automation)
+
+Future automation should generate both scripts from YAML campaign config while preserving your current behavior.
+
+Planned generated artifacts:
+
+- `generated/submit_<campaign>.sh`
+- `generated/petsc_benchmark_array_<campaign>.slurm`
+
+Planned config-to-Slurm mapping:
+
+- `hpc.nprocs: [1, 2, 4, 8, 16]` -> one `sbatch` per entry, exporting `TARGET_NPROCS`
+- `hpc.time_limit` -> `sbatch --time=...`
+- `hpc.array.count` -> `#SBATCH --array=0-(count-1)`
+- `hpc.cluster`, `hpc.account`, `hpc.mail_user`, `hpc.mail_type` -> corresponding `#SBATCH` directives
+- `hpc.modules` -> generated `module load ...` lines
+- `hpc.repo_dir` -> `cd` target for executing `run_benchmarks.py`
+
+Design goal: keep generated scripts transparent and editable, not hidden runtime magic.
+
+## Repository Structure
+
+Main folders relevant to the benchmark workflow:
+
+- [configs/benchmarks](configs/benchmarks): benchmark campaign YAML files
+- [include](include): C++ interfaces and problem declarations
+- [src](src): C++ implementations and benchmark entrypoint
+- [scripts](scripts): benchmark orchestration, ranking, plotting, dashboard
+- [results](results): raw and derived benchmark outputs
+- [docs](docs): notes and experiment writeups
+
+## Suggested Workflow for Custom Problems
+
+1. Implement the problem backend (C++ today, Python UFL/FEniCSx next).
+2. Add campaign entries in YAML, including mesh_sweep, param_sweep, and solver_sweep.
+3. Run the smoke config first for fast validation.
+4. Run the full campaign locally or on a cluster.
+5. Inspect results with dashboard and plots (solve time, iterations, memory, robustness).
 
 ## Roadmap
 
-### Phase 1 – Foundations
+Near-term priorities:
 
-- [X] Configure CMake project
-- [X] Install and link PETSc
-- [X] Build first PETSc application
-- [X] Solve a small linear system
-- [X] Learn Mat, Vec, KSP and PC
-- [X] Learn PETSc options database
-- [X] Learn basic MPI workflow
+- Add first Python problem adapter using UFL/FEniCSx
+- Normalize C++ and Python outputs to one shared record schema
+- Add config schema validation and helpful errors
+- Add mixed-language campaign examples
+- Auto-generate Slurm array submission files from campaign config
+- Auto-generate cluster launcher bash scripts from campaign config
+- Preserve compatibility with existing `submit_benchmarks.sh` + `petsc_benchmark_array.slurm` behavior
+- Add docs for cluster-scale runs and reproducibility best practices
 
-### Phase 2 – SPD Systems
+## Why This Matters
 
-- [ ] Poisson problem
-- [ ] CG
-- [ ] GMRES
-- [ ] Jacobi
-- [ ] ILU
+The point is not just to solve one PDE once.
 
-### Phase 3 – Multigrid
+The point is to make solver decisions evidence-driven:
 
-- [ ] GAMG
-- [ ] Hypre BoomerAMG
-- [ ] Mesh refinement studies
-
-### Phase 4 – Non-Symmetric Systems
-
-- [ ] Convection-Diffusion
-- [ ] GMRES
-- [ ] BiCGStab
-
-### Phase 5 – Nonlinear Systems
-
-- [ ] Nonlinear Poisson
-- [ ] Newton methods
-- [ ] SNES comparison
-
-### Phase 6 – Saddle-Point Systems
-
-- [ ] Stokes
-- [ ] FieldSplit
-- [ ] Schur complements
-
-### Phase 7 – Incompressible Flow
-
-- [ ] Navier-Stokes
-- [ ] Nonlinear coupled systems
-- [ ] Advanced preconditioning
-
-### Phase 8 – Variational Inequalities
-
-- [ ] vinewtonrsls
-- [ ] vinewtonssls
-- [ ] Obstacle problems
-- [ ] Contact mechanics
-
-### Phase 9 – HPC and Scalability
-
-- [ ] MPI strong scaling
-- [ ] MPI weak scaling
-- [ ] 3D problems
-- [ ] Automated benchmarking
-- [ ] Solver performance report
-
----
-
-## Future Extensions
-
-Potential future directions include:
-
-- FEniCSx implementations of selected benchmark problems
-- Comparison between direct PETSc usage and PETSc through FEniCSx
-- Matrix-free methods
-- Advanced multigrid configurations
-- Domain decomposition methods
-
----
-
-## Motivation
-
-The primary goal of this project is learning.
-
-By building a benchmarking framework from scratch in modern C++, I aim to develop a deeper understanding of PETSc, scientific computing, numerical linear algebra, and high-performance computing.
-
-A secondary goal is to create a reproducible solver study that systematically compares PETSc solver technologies across a wide range of representative problems.
+- reproducible campaigns
+- comparable outputs
+- easy custom problem integration
+- analysis tools that scale with project complexity
