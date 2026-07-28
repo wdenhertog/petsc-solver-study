@@ -17,10 +17,8 @@ Output:
     results/csv/<run_dir_name>.csv           top-N ranked rows per group
     results/csv/<run_dir_name>_full.csv       (only with --full) every valid row, unranked
 
-A "group" is one (problem, n, nprocs, lambda) combination. `lambda` is NaN
-for problems that don't sweep it (e.g. poisson) and pandas groups those
-rows together correctly via dropna=False, so this generalizes across
-problems without a problem-specific branch.
+A "group" is one (problem, nprocs, plus any problem-instance sweep
+parameters from the run's config.yaml and dataset columns) combination.
 """
 
 import argparse
@@ -28,15 +26,46 @@ import json
 import pandas as pd
 import sys
 from pathlib import Path
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_JSON_DIR = REPO_ROOT / "results" / "json"
 RESULTS_CSV_DIR = REPO_ROOT / "results" / "csv"
 
-# Columns that identify *what problem instance* was solved, as opposed to
-# *how* it was solved. Everything else in a row is either a solver-config
-# flag or an outcome metric.
-GROUP_COLS = ["problem", "n", "nprocs", "lambda"]
+SOLVER_FLAG_COLS = [
+    "snes_type",
+    "snes_linesearch_type",
+    "ksp_type",
+    "ksp_gmres_restart",
+    "pc_type",
+    "pc_jacobi_type",
+    "pc_factor_levels",
+    "pc_gamg_type",
+    "pc_gamg_threshold",
+    "pc_asm_overlap",
+    "pc_factor_mat_solver_type",
+]
+
+NON_INSTANCE_COLS = {
+    "problem",
+    "success",
+    "error",
+    "timed_out",
+    "converged_reason",
+    "converged_reason_string",
+    "iterations",
+    "outer_iterations",
+    "residual",
+    "residual_norm",
+    "setup_time",
+    "solve_time",
+    "dofs",
+    "peak_memory_bytes",
+    "total_memory_bytes",
+    "git_sha",
+    "git_dirty",
+    "petsc_version",
+}
 
 # Lower is better for both currently-supported ranking metrics.
 METRIC_CHOICES = ["solve_time", "iterations"]
@@ -70,6 +99,54 @@ def load_run(run_dir: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def load_run_config(run_dir: Path) -> dict | None:
+    config_path = run_dir / "config.yaml"
+    if not config_path.exists():
+        return None
+
+    with open(config_path) as fh:
+        cfg = yaml.safe_load(fh)
+    return cfg if isinstance(cfg, dict) else None
+
+
+def infer_group_cols(valid: pd.DataFrame, run_config: dict | None) -> list[str]:
+    group_cols = ["problem"]
+
+    # Prefer instance-key definitions from the copied run config.
+    config_keys = []
+    if isinstance(run_config, dict):
+        problems = run_config.get("problems")
+        if isinstance(problems, dict):
+            for problem_cfg in problems.values():
+                if not isinstance(problem_cfg, dict):
+                    continue
+                mesh = problem_cfg.get("mesh_sweep", {})
+                params = problem_cfg.get("param_sweep", {})
+                if isinstance(mesh, dict):
+                    config_keys.extend(mesh.keys())
+                if isinstance(params, dict):
+                    config_keys.extend(params.keys())
+
+    for col in ["nprocs", "n"]:
+        if col in valid.columns and col not in group_cols:
+            group_cols.append(col)
+
+    for col in config_keys:
+        if col in valid.columns and col not in group_cols:
+            group_cols.append(col)
+
+    # Fallback: if config is missing or incomplete, include other varying
+    # non-solver, non-metric columns as instance dimensions.
+    excluded = set(SOLVER_FLAG_COLS) | NON_INSTANCE_COLS
+    for col in valid.columns:
+        if col in excluded or col in group_cols:
+            continue
+        if valid[col].dropna().nunique() > 1:
+            group_cols.append(col)
+
+    return group_cols
+
+
 def summarize(df: pd.DataFrame) -> None:
     n_total = len(df)
     n_error = int(df["error"].notna().sum()) if "error" in df else 0
@@ -93,14 +170,12 @@ def summarize(df: pd.DataFrame) -> None:
     print("-------------------")
 
 
-def rank(df: pd.DataFrame, metric: str, top_n: int) -> pd.DataFrame:
+def rank(df: pd.DataFrame, metric: str, top_n: int, group_cols: list[str]) -> pd.DataFrame:
     valid = df[df.get("success") == True].copy()  # noqa: E712
     if valid.empty:
         sys.exit("No rows with success=True to rank.")
     if metric not in valid.columns:
         sys.exit(f"Metric '{metric}' not present in this dataset's columns.")
-
-    group_cols = [c for c in GROUP_COLS if c in valid.columns]
 
     valid = valid.sort_values(metric, ascending=True)
     valid["rank"] = valid.groupby(group_cols, dropna=False).cumcount() + 1
@@ -123,7 +198,10 @@ def main():
         help="Path to results/json/<run_id>/. Defaults to the most " "recently modified folder under results/json/.",
     )
     parser.add_argument(
-        "--top-n", type=int, default=10, help="Number of top configs to keep per (problem, n, nprocs, lambda) group."
+        "--top-n",
+        type=int,
+        default=10,
+        help="Number of top configs to keep per problem-instance group (problem, nprocs, and sweep params).",
     )
     parser.add_argument(
         "--metric",
@@ -143,9 +221,16 @@ def main():
         sys.exit(f"Not a directory: {run_dir}")
 
     df = load_run(run_dir)
+    run_config = load_run_config(run_dir)
     summarize(df)
 
-    ranked = rank(df, metric=args.metric, top_n=args.top_n)
+    valid = df[df.get("success") == True].copy()  # noqa: E712
+    if valid.empty:
+        sys.exit("No rows with success=True to rank.")
+    group_cols = infer_group_cols(valid, run_config)
+    print(f"Grouping columns: {group_cols}")
+
+    ranked = rank(df, metric=args.metric, top_n=args.top_n, group_cols=group_cols)
 
     RESULTS_CSV_DIR.mkdir(parents=True, exist_ok=True)
     out_path = RESULTS_CSV_DIR / f"{run_dir.name}.csv"

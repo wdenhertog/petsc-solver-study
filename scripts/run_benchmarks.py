@@ -1,10 +1,10 @@
 """
 run_benchmarks.py
 
-CONFIG below is written as a plain nested dict deliberately shaped like the
-YAML config this will eventually read from disk. Today it's hardcoded here;
-later, `CONFIG = yaml.safe_load(open(path))` replaces this literal and
-nothing downstream changes.
+Run benchmark sweeps from a YAML config file.
+
+The active config is copied into the run output folder so every result set is
+self-describing and reproducible.
 """
 
 import datetime
@@ -16,100 +16,55 @@ import math
 import os
 import argparse
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARK_BIN = REPO_ROOT / "bin" / "benchmark"
 RESULTS_DIR = REPO_ROOT / "results" / "json"
+CONFIGS_DIR = REPO_ROOT / "configs" / "benchmarks"
+DEFAULT_CONFIG_PATH = CONFIGS_DIR / "default.yaml"
+SMOKE_CONFIG_PATH = CONFIGS_DIR / "smoke.yaml"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-
-# ---------------------------------------------------------------------------
-# Config shape. This dict is the thing a YAML file will eventually deserialize
-# into — keep every value here JSON/YAML-serializable (no functions, no
-# Python-only objects) so the swap-over stays a one-liner.
-# ---------------------------------------------------------------------------
-CONFIG = {
-    "problems": {
-        "poisson": {
-            "kind": "linear",
-            "mesh_sweep": {"n": [32, 64, 128, 256, 512, 1024]},
-            "param_sweep": {},  # no problem-specific params yet
-            "solver_sweep": {
-                "ksp": [
-                    {"ksp_type": "cg", "extra": {}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 20}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 50}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 100}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 150}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 200}},
-                ],
-                "pc": [
-                    {"pc_type": "jacobi", "extra": {"pc_jacobi_type": "diagonal"}},
-                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 0}},
-                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 1}},
-                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 2}},
-                    {"pc_type": "ilu", "extra": {"pc_factor_levels": 3}},
-                    {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}},
-                    # {"pc_type": "gamg", "extra": {"pc_gamg_type": "classical"}},
-                ],
-                "direct": [
-                    {"ksp_type": "preonly", "pc_type": "lu", "extra": {"pc_factor_mat_solver_type": "mumps"}},
-                    {"ksp_type": "preonly", "pc_type": "cholesky", "extra": {"pc_factor_mat_solver_type": "mumps"}},
-                ],
-            },
-        },
-        "bratu": {
-            "kind": "nonlinear",
-            "mesh_sweep": {"n": [32, 64, 128, 256, 512, 1024]},
-            "param_sweep": {"lambda": [1.0, 3.0, 5.0, 6.5, 6.8]},
-            "solver_sweep": {
-                "snes": [
-                    {"snes_type": "newtonls", "extra": {"snes_linesearch_type": "basic"}},
-                    {"snes_type": "newtonls", "extra": {"snes_linesearch_type": "bt"}},
-                    {"snes_type": "newtontr", "extra": {}},
-                ],
-                "ksp": [
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 30}},
-                    {"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 100}},
-                    {"ksp_type": "bcgs", "extra": {}},
-                    {"ksp_type": "fgmres", "extra": {"ksp_gmres_restart": 50}},
-                ],
-                "pc": [
-                    {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}},
-                    {"pc_type": "gamg", "extra": {"pc_gamg_type": "agg", "pc_gamg_threshold": 0.05}},
-                    {"pc_type": "asm", "extra": {"pc_asm_overlap": 1}},
-                    {"pc_type": "asm", "extra": {"pc_asm_overlap": 2}},
-                ],
-            },
-        },
-    },
-}
 
 SMOKE_TEST = os.environ.get("SMOKE_TEST", "0") == "1"
 
-if SMOKE_TEST:
-    CONFIG = {
-        "problems": {
-            "poisson": {
-                "kind": "linear",
-                "mesh_sweep": {"n": [64]},
-                "param_sweep": {},
-                "solver_sweep": {
-                    "ksp": [{"ksp_type": "cg", "extra": {}}],
-                    "pc": [{"pc_type": "jacobi", "extra": {"pc_jacobi_type": "diagonal"}}],
-                    "direct": [],
-                },
-            },
-            "bratu": {
-                "kind": "nonlinear",
-                "mesh_sweep": {"n": [64]},
-                "param_sweep": {"lambda": [3.0]},
-                "solver_sweep": {
-                    "snes": [{"snes_type": "newtonls", "extra": {"snes_linesearch_type": "bt"}}],
-                    "ksp": [{"ksp_type": "gmres", "extra": {"ksp_gmres_restart": 30}}],
-                    "pc": [{"pc_type": "gamg", "extra": {"pc_gamg_type": "agg"}}],
-                },
-            },
+
+def load_config(config_path: Path) -> dict:
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with open(config_path) as fh:
+        cfg = yaml.safe_load(fh)
+
+    if not isinstance(cfg, dict):
+        raise ValueError(f"Config must be a mapping at top level: {config_path}")
+    if "problems" not in cfg or not isinstance(cfg["problems"], dict) or not cfg["problems"]:
+        raise ValueError(f"Config must define a non-empty 'problems' mapping: {config_path}")
+
+    return cfg
+
+
+def snapshot_config(run_dir: Path, config: dict, source_path: Path):
+    snapshot_path = run_dir / "config.yaml"
+    if snapshot_path.exists():
+        return
+
+    try:
+        source_config = str(source_path.resolve().relative_to(REPO_ROOT.resolve()))
+    except ValueError:
+        # Keep metadata privacy-friendly when config is outside the repository.
+        source_config = source_path.name
+
+    snapshot_doc = {
+        "meta": {
+            "generated_by": "scripts/run_benchmarks.py",
+            "source_config": source_config,
+            "copied_at_utc": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
         },
+        **config,
     }
+    with open(snapshot_path, "w") as fh:
+        yaml.safe_dump(snapshot_doc, fh, sort_keys=False)
 
 
 def is_valid_combo(solver_flags: dict, nprocs: int) -> bool:
@@ -153,8 +108,8 @@ def flatten_extra(*configs) -> dict:
 
 def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
     """Expand one problem's config into a flat list of {mesh, param, solver} combos."""
-    mesh_combos = product_dict(problem_cfg["mesh_sweep"])
-    param_combos = product_dict(problem_cfg["param_sweep"])
+    mesh_combos = product_dict(problem_cfg.get("mesh_sweep", {}))
+    param_combos = product_dict(problem_cfg.get("param_sweep", {}))
 
     if problem_cfg["kind"] == "linear":
         solver_combos = [
@@ -227,7 +182,25 @@ def log(f, result: dict, **context):
 def main():
     parser = argparse.ArgumentParser(description="Run PETSc Solver Benchmarks")
     parser.add_argument("--dry-run", action="store_true", help="Print execution plan without running")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Path to YAML benchmark config. Defaults to configs/benchmarks/default.yaml "
+            "(or configs/benchmarks/smoke.yaml when SMOKE_TEST=1)."
+        ),
+    )
     args = parser.parse_args()
+
+    default_cfg = SMOKE_CONFIG_PATH if SMOKE_TEST else DEFAULT_CONFIG_PATH
+    config_path = args.config or default_cfg
+    config_path = config_path if config_path.is_absolute() else (REPO_ROOT / config_path)
+
+    try:
+        config = load_config(config_path)
+    except (FileNotFoundError, ValueError, yaml.YAMLError) as exc:
+        raise SystemExit(f"Failed to load config: {exc}")
 
     # Prefer a RUN_ID passed in from the submit script (keeps all nprocs/chunks
     # of one sweep together); fall back to generating one locally for ad-hoc runs.
@@ -244,10 +217,11 @@ def main():
 
     run_dir = RESULTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_config(run_dir, config, config_path)
 
     # 2. Build the baseline specs
     all_specs = []
-    for name, cfg in CONFIG["problems"].items():
+    for name, cfg in config["problems"].items():
         specs = build_run_specs(name, cfg)
         for s in specs:
             s["problem_kind"] = cfg["kind"]
@@ -275,6 +249,7 @@ def main():
     # 6. Print the execution plan for verification
     print("=" * 55)
     print(f"TARGET_NPROCS:          {target_nprocs}")
+    print(f"CONFIG:                 {config_path}")
     print(f"TOTAL VALID JOBS:       {len(flat_jobs)}")
     print(f"SLURM_ARRAY_TASK_COUNT: {array_count}")
     print(f"CHUNK SIZE:             {chunk_size}")

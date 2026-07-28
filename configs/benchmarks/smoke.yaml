@@ -1,0 +1,40 @@
+problems:
+  poisson:
+    kind: linear
+    mesh_sweep:
+      n: [64]
+    param_sweep: {}
+    labels:
+      n: Mesh size (n)
+    solver_sweep:
+      ksp:
+        - ksp_type: cg
+          extra: {}
+      pc:
+        - pc_type: jacobi
+          extra:
+            pc_jacobi_type: diagonal
+      direct: []
+
+  bratu:
+    kind: nonlinear
+    mesh_sweep:
+      n: [64]
+    param_sweep:
+      lambda: [3.0]
+    labels:
+      n: Mesh size (n)
+      lambda: Bratu parameter (lambda)
+    solver_sweep:
+      snes:
+        - snes_type: newtonls
+          extra:
+            snes_linesearch_type: bt
+      ksp:
+        - ksp_type: gmres
+          extra:
+            ksp_gmres_restart: 30
+      pc:
+        - pc_type: gamg
+          extra:
+            pc_gamg_type: agg

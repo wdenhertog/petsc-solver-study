@@ -31,12 +31,15 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plot_results as pr  # noqa: E402
 import rank_results as rr  # noqa: E402
 
 st.set_page_config(page_title="petsc-solver-study dashboard", layout="wide")
+
+RUN_CONFIG_NAME = "config.yaml"
 
 
 @st.cache_data
@@ -55,6 +58,112 @@ def list_run_dirs() -> list[Path]:
     )
 
 
+def find_run_config_path(run_dir: Path) -> Path | None:
+    candidate = run_dir / RUN_CONFIG_NAME
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None
+
+
+@st.cache_data
+def load_yaml_cached(path_str: str, mtime: float) -> dict | None:
+    with open(path_str) as fh:
+        cfg = yaml.safe_load(fh)
+    return cfg if isinstance(cfg, dict) else None
+
+
+def sorted_unique(series: pd.Series) -> list:
+    vals = [v for v in series.dropna().unique().tolist()]
+    try:
+        return sorted(vals)
+    except TypeError:
+        return sorted(vals, key=str)
+
+
+def default_for_column(df: pd.DataFrame, col: str, options: list):
+    if not options:
+        return None
+    if col == "n" and "n" in df.columns:
+        return pr.pick_default_n(df)
+    if pd.api.types.is_numeric_dtype(df[col]):
+        return options[len(options) // 2]
+    return options[0]
+
+
+def get_problem_cfg(run_config: dict | None, problem: str) -> dict:
+    if not run_config:
+        return {}
+    problems = run_config.get("problems")
+    if not isinstance(problems, dict):
+        return {}
+    cfg = problems.get(problem)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def get_instance_keys(problem_cfg: dict, sub_df: pd.DataFrame) -> list[str]:
+    keys = []
+    mesh = problem_cfg.get("mesh_sweep", {}) if isinstance(problem_cfg, dict) else {}
+    params = problem_cfg.get("param_sweep", {}) if isinstance(problem_cfg, dict) else {}
+
+    if isinstance(mesh, dict):
+        keys.extend([k for k in mesh.keys() if k in sub_df.columns])
+    if isinstance(params, dict):
+        keys.extend([k for k in params.keys() if k in sub_df.columns])
+
+    if "nprocs" in sub_df.columns and "nprocs" not in keys:
+        keys = ["nprocs"] + keys
+    elif "nprocs" in sub_df.columns:
+        keys = ["nprocs"] + [k for k in keys if k != "nprocs"]
+
+    if not keys:
+        fallback = [k for k in ["nprocs", "n"] if k in sub_df.columns]
+        keys.extend(fallback)
+
+    # If config metadata is missing/incomplete, auto-surface varying non-solver
+    # columns as problem-instance controls.
+    exclude_cols = {
+        "problem",
+        "config_label",
+        "success",
+        "error",
+        "timed_out",
+        "converged_reason",
+        "converged_reason_string",
+        "iterations",
+        "outer_iterations",
+        "residual",
+        "residual_norm",
+        "setup_time",
+        "solve_time",
+        "dofs",
+        "peak_memory_bytes",
+        "total_memory_bytes",
+        "git_sha",
+        "git_dirty",
+        "petsc_version",
+    }
+    exclude_cols.update(pr.SOLVER_FLAG_COLS)
+
+    inferred = []
+    for col in sub_df.columns:
+        if col in exclude_cols or col in keys:
+            continue
+        if sub_df[col].dropna().nunique() > 1:
+            inferred.append(col)
+    keys.extend(sorted(inferred))
+
+    return keys
+
+
+def get_labels(run_config: dict | None, problem_cfg: dict) -> dict:
+    labels = {}
+    if isinstance(run_config, dict) and isinstance(run_config.get("labels"), dict):
+        labels.update(run_config["labels"])
+    if isinstance(problem_cfg, dict) and isinstance(problem_cfg.get("labels"), dict):
+        labels.update(problem_cfg["labels"])
+    return labels
+
+
 # ---------------------------------------------------------------------------
 # Sidebar: run + instance selection
 # ---------------------------------------------------------------------------
@@ -69,6 +178,13 @@ if not run_dirs:
 run_dir = st.sidebar.selectbox("Run folder", run_dirs, format_func=lambda d: d.name, index=0)
 
 df_raw = load_run_cached(str(run_dir), run_dir.stat().st_mtime)
+config_path = find_run_config_path(run_dir)
+run_config = None
+if config_path is not None:
+    run_config = load_yaml_cached(str(config_path), config_path.stat().st_mtime)
+    st.sidebar.caption(f"Config: {config_path.name}")
+else:
+    st.sidebar.caption("Config: not found in run folder (using data-driven fallback controls)")
 
 problems = sorted(df_raw["problem"].dropna().unique())
 problem = st.sidebar.selectbox("Problem", problems)
@@ -85,31 +201,48 @@ if not legend_cols:
     legend_cols = pr.DEFAULT_LEGEND_COLS
 
 sub = pr.prep(df_raw, problem, legend_cols)
+problem_cfg = get_problem_cfg(run_config, problem)
+label_overrides = get_labels(run_config, problem_cfg)
 
 st.sidebar.header("Problem instance")
 
-nprocs_options = sorted(sub["nprocs"].dropna().unique().astype(int))
-nprocs = st.sidebar.select_slider(
-    "nprocs (for per-DOF / pareto / setup_vs_solve)", options=nprocs_options, value=nprocs_options[0]
-)
+instance_filters = {}
+instance_keys = get_instance_keys(problem_cfg, sub)
 
-n_options = sorted(sub["n"].dropna().unique().astype(int))
-default_n = pr.pick_default_n(sub)
-n = st.sidebar.select_slider(
-    "n (mesh size, for pareto / setup_vs_solve / scaling plots)", options=n_options, value=default_n
-)
+for key in instance_keys:
+    if key not in sub.columns:
+        continue
+    options = sorted_unique(sub[key])
+    if not options:
+        continue
 
-lam = None
-if "lambda" in sub.columns and sub["lambda"].notna().any():
-    lam_options = sorted(sub["lambda"].dropna().unique())
-    default_lam = pr.pick_default_lambda(sub)
-    lam = st.sidebar.select_slider("lambda", options=lam_options, value=default_lam)
+    default_value = default_for_column(sub, key, options)
+    if default_value not in options:
+        default_value = options[0]
+
+    label = label_overrides.get(key, key)
+    if key == "nprocs" and len(options) > 1:
+        value = st.sidebar.select_slider(
+            f"{label} (for per-DOF / pareto / setup_vs_solve)",
+            options=options,
+            value=default_value,
+        )
+    elif len(options) > 1:
+        value = st.sidebar.selectbox(label, options=options, index=options.index(default_value))
+    else:
+        value = options[0]
+        st.sidebar.caption(f"{label}: {value} (single value in this run)")
+
+    instance_filters[key] = value
+
+nprocs = int(instance_filters.get("nprocs", 1))
+n = int(instance_filters.get("n", pr.pick_default_n(sub))) if "n" in sub.columns else 0
 
 memory_metric = st.sidebar.radio(
     "Pareto memory axis",
     pr.MEMORY_METRIC_CHOICES,
     index=0,
-    help="peak = per-rank max (will it fit). total = whole-job sum (resource cost).",
+    help="peak = per-rank max (will it fit). total = whole-job sum (resource cost). Display units are GiB.",
 )
 
 # ---------------------------------------------------------------------------
@@ -157,7 +290,14 @@ tabs = st.tabs(tab_names)
 
 with tabs[0]:
     metric = st.radio("Metric", ["iterations", "outer_iterations"], horizontal=True, key="iter_metric")
-    fig = pr.plot_iterations_vs_dofs(sub, problem, nprocs=nprocs, lam=lam, metric=metric)
+    iter_filters = {k: v for k, v in instance_filters.items() if k != "n"}
+    fig = pr.plot_iterations_vs_dofs(
+        sub,
+        problem,
+        nprocs=nprocs,
+        metric=metric,
+        instance_filters=iter_filters,
+    )
     if fig is not None:
         st.pyplot(fig)
     else:
@@ -171,28 +311,35 @@ with tabs[1]:
         st.info("No rows for this selection.")
 
 with tabs[2]:
-    fig = pr.plot_pareto(sub, problem, n=n, nprocs=nprocs, lam=lam, memory_metric=memory_metric)
+    fig = pr.plot_pareto(
+        sub,
+        problem,
+        n=n,
+        nprocs=nprocs,
+        memory_metric=memory_metric,
+        instance_filters=instance_filters,
+    )
     if fig is not None:
         st.pyplot(fig)
     else:
         st.info("No successful rows for this selection.")
 
 with tabs[3]:
-    fig = pr.plot_setup_vs_solve(sub, problem, n=n, nprocs=nprocs, lam=lam)
+    fig = pr.plot_setup_vs_solve(sub, problem, n=n, nprocs=nprocs, instance_filters=instance_filters)
     if fig is not None:
         st.pyplot(fig)
     else:
         st.info("No successful rows for this selection.")
 
 with tabs[4]:
-    fig = pr.plot_strong_scaling(sub, problem, n=n, lam=lam)
+    fig = pr.plot_strong_scaling(sub, problem, n=n, instance_filters=instance_filters)
     if fig is not None:
         st.pyplot(fig)
     else:
         st.info("No successful rows for this selection.")
 
 with tabs[5]:
-    fig = pr.plot_memory_scaling(sub, problem, n=n, lam=lam)
+    fig = pr.plot_memory_scaling(sub, problem, n=n, instance_filters=instance_filters)
     if fig is not None:
         st.pyplot(fig)
     else:
@@ -201,11 +348,17 @@ with tabs[5]:
 with tabs[6]:
     top_n = st.slider("Top N per group", min_value=1, max_value=25, value=10)
     metric_choice = st.radio("Rank by", rr.METRIC_CHOICES, horizontal=True, key="rank_metric")
-    ranked = rr.rank(sub, metric=metric_choice, top_n=top_n)
-    st.dataframe(ranked, width="stretch")
-    st.download_button(
-        "Download this table as CSV",
-        ranked.to_csv(index=False),
-        file_name=f"{run_dir.name}_{problem}_top{top_n}_{metric_choice}.csv",
-        mime="text/csv",
-    )
+    rank_input = sub.drop(columns=["config_label"], errors="ignore")
+    valid_for_grouping = rank_input[rank_input.get("success") == True].copy()  # noqa: E712
+    if valid_for_grouping.empty:
+        st.info("No successful rows for this selection.")
+    else:
+        group_cols = rr.infer_group_cols(valid_for_grouping, run_config)
+        ranked = rr.rank(rank_input, metric=metric_choice, top_n=top_n, group_cols=group_cols)
+        st.dataframe(ranked, width="stretch")
+        st.download_button(
+            "Download this table as CSV",
+            ranked.to_csv(index=False),
+            file_name=f"{run_dir.name}_{problem}_top{top_n}_{metric_choice}.csv",
+            mime="text/csv",
+        )

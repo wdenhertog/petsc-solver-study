@@ -38,18 +38,15 @@ variant as a separate noisy line". Use --legend-by to override (e.g.
 
 Problem-instance filtering
 ---------------------------
-`n`, `nprocs`, and `lambda` (where applicable) identify *which problem
-instance* was solved, not how. Plots that compare solver behavior at a
-fixed problem size explicitly fix all of these (mixing e.g. lambda=1.0 and
-lambda=6.8 into one line is mixing two different problem difficulties, not
-solver noise — this was the cause of the previous "chaotic" Bratu plots).
-`--lambda` lets you override which value is used; problems without a
-lambda dimension (e.g. poisson) are unaffected.
+`n`, `nprocs`, and any problem-specific sweep parameters identify *which
+problem instance* was solved, not how. If a run varies extra problem
+parameters (for example a nonlinear continuation parameter), fix those with
+`--instance-filter key=value` so plots compare solvers on the same instance.
 
 Usage:
     python3 scripts/plot_results.py results/json/20260722T222536_b3ccfea
     python3 scripts/plot_results.py results/json/<run_id> --problem bratu
-    python3 scripts/plot_results.py results/json/<run_id> --lambda 6.8
+    python3 scripts/plot_results.py results/json/<run_id> --instance-filter continuation=6.8
     python3 scripts/plot_results.py results/json/<run_id> --legend-by pc_type ksp_type snes_type
     python3 scripts/plot_results.py results/json/<run_id> --plots pareto strong_scaling
     python3 scripts/plot_results.py                                # auto-picks latest run
@@ -94,12 +91,22 @@ SOLVER_FLAG_COLS = [
 # without a kind-specific branch.
 DEFAULT_LEGEND_COLS = ["snes_type", "pc_type"]
 
-# Columns that identify *which problem instance* is being solved.
-INSTANCE_FILTER_COLS = ["n", "nprocs", "lambda"]
-
 ALL_PLOTS = ["iterations_vs_dofs", "success_rate", "pareto", "setup_vs_solve", "strong_scaling", "memory_scaling"]
 
 MEMORY_METRIC_CHOICES = ["peak_memory_bytes", "total_memory_bytes"]
+BYTES_PER_GIB = float(1024**3)
+
+
+def bytes_to_gib(series: pd.Series) -> pd.Series:
+    return series / BYTES_PER_GIB
+
+
+def memory_metric_label(metric: str) -> str:
+    if metric == "peak_memory_bytes":
+        return "peak memory (GiB)"
+    if metric == "total_memory_bytes":
+        return "total memory (GiB)"
+    return f"{metric} (GiB)"
 
 
 # ---------------------------------------------------------------------------
@@ -152,26 +159,37 @@ def prep(df: pd.DataFrame, problem: str, legend_cols: list[str]) -> pd.DataFrame
     return sub
 
 
-def pick_default_lambda(df: pd.DataFrame):
-    """Median of the unique lambda values present, or None if this problem has no lambda dimension."""
-    if "lambda" not in df.columns:
-        return None
-    vals = sorted(df["lambda"].dropna().unique())
-    if not vals:
-        return None
-    return vals[len(vals) // 2]
-
-
-def apply_instance_filter(df: pd.DataFrame, n=None, nprocs=None, lam=None) -> pd.DataFrame:
+def apply_instance_filter(df: pd.DataFrame, n=None, nprocs=None, instance_filters: dict | None = None) -> pd.DataFrame:
     """Fix problem-instance columns that are provided (not None) and present in df."""
     sub = df
     if n is not None and "n" in sub.columns:
         sub = sub[sub["n"] == n]
     if nprocs is not None and "nprocs" in sub.columns:
         sub = sub[sub["nprocs"] == nprocs]
-    if lam is not None and "lambda" in sub.columns and sub["lambda"].notna().any():
-        sub = sub[sub["lambda"] == lam]
+    if instance_filters:
+        for col, value in instance_filters.items():
+            if value is None:
+                continue
+            if col in {"n", "nprocs"}:
+                continue
+            if col in sub.columns:
+                sub = sub[sub[col] == value]
     return sub
+
+
+def format_instance_context(instance_filters: dict | None, exclude_keys: set[str] | None = None) -> str:
+    if not instance_filters:
+        return ""
+    exclude = exclude_keys or set()
+    parts = []
+    for key in sorted(instance_filters.keys()):
+        if key in exclude:
+            continue
+        value = instance_filters[key]
+        if value is None:
+            continue
+        parts.append(f"{key}={value}")
+    return f", {', '.join(parts)}" if parts else ""
 
 
 def best_of_per_group(df: pd.DataFrame, group_cols: list[str], x_col: str, metric: str) -> pd.DataFrame:
@@ -191,11 +209,18 @@ def best_of_per_group(df: pd.DataFrame, group_cols: list[str], x_col: str, metri
 # ---------------------------------------------------------------------------
 
 
-def plot_iterations_vs_dofs(df: pd.DataFrame, problem: str, nprocs: int, lam, metric: str):
+def plot_iterations_vs_dofs(
+    df: pd.DataFrame,
+    problem: str,
+    nprocs: int,
+    metric: str,
+    instance_filters: dict | None = None,
+):
     sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, nprocs=nprocs, lam=lam)
+    sub = apply_instance_filter(sub, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
-        print(f"  [iterations_vs_dofs] no successful rows at nprocs={nprocs}, lambda={lam}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        print(f"  [iterations_vs_dofs] no successful rows at nprocs={nprocs}{ctx}, skipping")
         return
 
     best = best_of_per_group(sub, ["config_label"], "dofs", metric)
@@ -210,9 +235,9 @@ def plot_iterations_vs_dofs(df: pd.DataFrame, problem: str, nprocs: int, lam, me
     ax.set_xscale("log")
     ax.set_xlabel("DOFs (log scale)")
     ax.set_ylabel(metric)
-    lam_str = f", lambda={lam}" if lam is not None else ""
+    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
     ax.set_title(
-        f"{problem}: best {metric} vs DOFs (nprocs={nprocs}{lam_str})\n"
+        f"{problem}: best {metric} vs DOFs (nprocs={nprocs}{inst_str})\n"
         f"Flat = algorithmically optimal preconditioner. Each line: best sub-config per family."
     )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
@@ -264,26 +289,37 @@ def pareto_front(points: pd.DataFrame, x_col: str, y_col: str) -> pd.DataFrame:
     return pd.DataFrame(front_rows)
 
 
-def plot_pareto(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam, memory_metric: str):
+def plot_pareto(
+    df: pd.DataFrame,
+    problem: str,
+    n: int,
+    nprocs: int,
+    memory_metric: str,
+    instance_filters: dict | None = None,
+):
     sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, n=n, nprocs=nprocs, lam=lam)
+    sub = apply_instance_filter(sub, n=n, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
-        print(f"  [pareto] no successful rows at n={n}, nprocs={nprocs}, lambda={lam}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        print(f"  [pareto] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping")
         return
 
     front = pareto_front(sub, "solve_time", memory_metric)
 
     fig, ax = plt.subplots(figsize=(8, 6))
     for label, grp in sub.groupby("config_label"):
-        ax.scatter(grp["solve_time"], grp[memory_metric], alpha=0.5, s=25, label=label)
-    ax.plot(front["solve_time"], front[memory_metric], "k--", alpha=0.6, label="Pareto frontier")
+        ax.scatter(grp["solve_time"], bytes_to_gib(grp[memory_metric]), alpha=0.5, s=25, label=label)
+    ax.plot(front["solve_time"], bytes_to_gib(front[memory_metric]), "k--", alpha=0.6, label="Pareto frontier")
     ax.set_xlabel("solve_time (s)")
-    ax.set_ylabel(memory_metric)
-    lam_str = f", lambda={lam}" if lam is not None else ""
+    ax.set_ylabel(memory_metric_label(memory_metric))
+    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
     metric_note = (
         "per-rank max — will it fit" if memory_metric == "peak_memory_bytes" else "whole-job sum — resource cost"
     )
-    ax.set_title(f"{problem}: solve_time vs {memory_metric} ({metric_note})\n(n={n}, nprocs={nprocs}{lam_str})")
+    ax.set_title(
+        f"{problem}: solve_time vs {memory_metric_label(memory_metric)} ({metric_note})\n"
+        f"(n={n}, nprocs={nprocs}{inst_str})"
+    )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     return fig
 
@@ -293,11 +329,18 @@ def plot_pareto(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam, memory
 # ---------------------------------------------------------------------------
 
 
-def plot_setup_vs_solve(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam):
+def plot_setup_vs_solve(
+    df: pd.DataFrame,
+    problem: str,
+    n: int,
+    nprocs: int,
+    instance_filters: dict | None = None,
+):
     sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, n=n, nprocs=nprocs, lam=lam)
+    sub = apply_instance_filter(sub, n=n, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
-        print(f"  [setup_vs_solve] no successful rows at n={n}, nprocs={nprocs}, lambda={lam}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        print(f"  [setup_vs_solve] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping")
         return
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -308,8 +351,8 @@ def plot_setup_vs_solve(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam
     ax.set_yscale("log")
     ax.set_xlabel("setup_time (s, log scale)")
     ax.set_ylabel("solve_time (s, log scale)")
-    lam_str = f", lambda={lam}" if lam is not None else ""
-    ax.set_title(f"{problem}: setup vs solve time (n={n}, nprocs={nprocs}{lam_str})")
+    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+    ax.set_title(f"{problem}: setup vs solve time (n={n}, nprocs={nprocs}{inst_str})")
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     return fig
 
@@ -319,11 +362,12 @@ def plot_setup_vs_solve(df: pd.DataFrame, problem: str, n: int, nprocs: int, lam
 # ---------------------------------------------------------------------------
 
 
-def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, lam):
+def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None):
     sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, n=n, lam=lam)
+    sub = apply_instance_filter(sub, n=n, instance_filters=instance_filters)
     if sub.empty:
-        print(f"  [strong_scaling] no successful rows at n={n}, lambda={lam}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        print(f"  [strong_scaling] no successful rows at n={n}{ctx}, skipping")
         return
 
     best = best_of_per_group(sub, ["config_label"], "nprocs", "solve_time")
@@ -348,9 +392,10 @@ def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, lam):
     ax.set_yscale("log")
     ax.set_xlabel("nprocs (log2 scale)")
     ax.set_ylabel("solve_time (s, log scale)")
-    lam_str = f", lambda={lam}" if lam is not None else ""
+    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
     ax.set_title(
-        f"{problem}: strong scaling (n={n}{lam_str}, fixed problem size)\nEach line: best sub-config per family, per nprocs"
+        f"{problem}: strong scaling (n={n}{inst_str}, fixed problem size)\n"
+        f"Each line: best sub-config per family, per nprocs"
     )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     return fig
@@ -361,11 +406,12 @@ def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, lam):
 # ---------------------------------------------------------------------------
 
 
-def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, lam):
+def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None):
     sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, n=n, lam=lam)
+    sub = apply_instance_filter(sub, n=n, instance_filters=instance_filters)
     if sub.empty:
-        print(f"  [memory_scaling] no successful rows at n={n}, lambda={lam}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        print(f"  [memory_scaling] no successful rows at n={n}{ctx}, skipping")
         return
 
     labels = sorted(sub["config_label"].unique())
@@ -382,7 +428,7 @@ def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, lam):
             continue
         ax.plot(
             grp["nprocs"],
-            grp["peak_memory_bytes"],
+            bytes_to_gib(grp["peak_memory_bytes"]),
             marker="o",
             linestyle="-",
             color=color_for[label],
@@ -395,7 +441,7 @@ def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, lam):
             continue
         ax.plot(
             grp["nprocs"],
-            grp["total_memory_bytes"],
+            bytes_to_gib(grp["total_memory_bytes"]),
             marker="s",
             linestyle="--",
             color=color_for[label],
@@ -406,10 +452,10 @@ def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, lam):
     ax.set_xscale("log", base=2)
     ax.set_yscale("log")
     ax.set_xlabel("nprocs (log2 scale)")
-    ax.set_ylabel("memory (bytes, log scale)")
-    lam_str = f", lambda={lam}" if lam is not None else ""
+    ax.set_ylabel("memory (GiB, log scale)")
+    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
     ax.set_title(
-        f"{problem}: memory scaling (n={n}{lam_str}, fixed problem size)\n"
+        f"{problem}: memory scaling (n={n}{inst_str}, fixed problem size)\n"
         f"Solid=peak (per-rank max, falling is good) — Dashed=total (whole-job sum, rising is overhead cost)"
     )
     ax.legend(fontsize=7, loc="upper left", bbox_to_anchor=(1.02, 1.0))
@@ -475,12 +521,12 @@ def main():
         "Defaults to the largest n present at every nprocs value.",
     )
     parser.add_argument(
-        "--lambda",
-        type=float,
-        default=None,
-        dest="lam",
-        help="Fixed lambda (for problems with a lambda param sweep, e.g. bratu). "
-        "Defaults to the median lambda present. Ignored for problems without lambda.",
+        "--instance-filter",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Repeatable instance filter for problem-specific sweep parameters, e.g. "
+        "--instance-filter continuation=6.8 --instance-filter Re=1000.",
     )
     parser.add_argument(
         "--legend-by",
@@ -496,10 +542,21 @@ def main():
         default="peak_memory_bytes",
         help="Memory axis for the pareto plot. peak_memory_bytes (default) is the "
         "per-rank max — 'will it fit on a node'. total_memory_bytes is the "
-        "whole-job sum across ranks — cluster resource cost. Only affects "
-        "pareto; memory_scaling always plots both.",
+        "whole-job sum across ranks — cluster resource cost. Values are displayed "
+        "as GiB in the plots. Only affects pareto; memory_scaling always plots both.",
     )
     args = parser.parse_args()
+
+    raw_instance_filters = {}
+    for item in args.instance_filter:
+        if "=" not in item:
+            parser.error(f"Invalid --instance-filter '{item}'. Expected KEY=VALUE.")
+        key, raw = item.split("=", 1)
+        key = key.strip()
+        raw = raw.strip()
+        if not key:
+            parser.error(f"Invalid --instance-filter '{item}'. Empty key.")
+        raw_instance_filters[key] = raw
 
     run_dir = args.run_dir or find_latest_run_dir()
     if not run_dir.is_dir():
@@ -514,34 +571,59 @@ def main():
         print(f"\n=== {problem} ===")
         sub = prep(df, problem, legend_cols)
         n = args.n if args.n is not None else pick_default_n(sub)
-        lam = args.lam if args.lam is not None else pick_default_lambda(sub)
+
+        instance_filters = {}
+        for key, raw in raw_instance_filters.items():
+            if key in sub.columns:
+                col = sub[key]
+                if pd.api.types.is_integer_dtype(col):
+                    instance_filters[key] = int(raw)
+                elif pd.api.types.is_float_dtype(col):
+                    instance_filters[key] = float(raw)
+                elif pd.api.types.is_bool_dtype(col):
+                    instance_filters[key] = raw.lower() in {"1", "true", "yes", "on"}
+                else:
+                    instance_filters[key] = raw
+            else:
+                instance_filters[key] = raw
 
         out_dir = RESULTS_PLOTS_DIR / run_dir.name / problem
         out_dir.mkdir(parents=True, exist_ok=True)
 
         if "iterations_vs_dofs" in args.plots:
-            fig = plot_iterations_vs_dofs(sub, problem, nprocs=args.nprocs, lam=lam, metric=args.iter_metric)
+            fig = plot_iterations_vs_dofs(
+                sub,
+                problem,
+                nprocs=args.nprocs,
+                metric=args.iter_metric,
+                instance_filters=instance_filters,
+            )
             save_fig(fig, out_dir, "iterations_vs_dofs", "iterations_vs_dofs")
         if "success_rate" in args.plots:
             fig = plot_success_rate(sub, problem)
             save_fig(fig, out_dir, "success_rate", "success_rate")
         if "pareto" in args.plots:
-            fig = plot_pareto(sub, problem, n=n, nprocs=args.nprocs, lam=lam, memory_metric=args.memory_metric)
+            fig = plot_pareto(
+                sub,
+                problem,
+                n=n,
+                nprocs=args.nprocs,
+                memory_metric=args.memory_metric,
+                instance_filters=instance_filters,
+            )
             save_fig(fig, out_dir, "pareto", "pareto")
         if "setup_vs_solve" in args.plots:
-            fig = plot_setup_vs_solve(sub, problem, n=n, nprocs=args.nprocs, lam=lam)
+            fig = plot_setup_vs_solve(sub, problem, n=n, nprocs=args.nprocs, instance_filters=instance_filters)
             save_fig(fig, out_dir, "setup_vs_solve", "setup_vs_solve")
         if "strong_scaling" in args.plots:
-            fig = plot_strong_scaling(sub, problem, n=n, lam=lam)
+            fig = plot_strong_scaling(sub, problem, n=n, instance_filters=instance_filters)
             save_fig(fig, out_dir, "strong_scaling", "strong_scaling")
         if "memory_scaling" in args.plots:
-            fig = plot_memory_scaling(sub, problem, n=n, lam=lam)
+            fig = plot_memory_scaling(sub, problem, n=n, instance_filters=instance_filters)
             save_fig(fig, out_dir, "memory_scaling", "memory_scaling")
 
-        print(
-            f"  wrote plots to {out_dir} (legend grouped by {legend_cols}"
-            f"{f', lambda={lam}' if lam is not None else ''})"
-        )
+        inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        print(f"  wrote plots to {out_dir} (legend grouped by {legend_cols}" f"{inst_str})")
 
 
 if __name__ == "__main__":

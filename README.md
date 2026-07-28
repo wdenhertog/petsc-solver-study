@@ -50,6 +50,26 @@ All studies will be performed using reproducible benchmark suites and automated 
 
 ---
 
+## Benchmark Config Workflow
+
+Benchmark sweeps are configured with YAML files in [configs/benchmarks/default.yaml](configs/benchmarks/default.yaml) and [configs/benchmarks/smoke.yaml](configs/benchmarks/smoke.yaml).
+
+Run with the default config:
+
+```bash
+pixi run benchmark
+```
+
+Run with a custom config:
+
+```bash
+pixi run benchmark -- --config configs/benchmarks/my_campaign.yaml
+```
+
+Each run copies the active config into its result folder as [results/json/<run_id>/config.yaml](results/json), so the dashboard and post-processing tools can reconstruct the exact parameter sweep used for that run.
+
+---
+
 ## Planned Studies
 
 ### Linear Solvers (KSP)
