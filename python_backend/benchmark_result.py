@@ -3,6 +3,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 from mpi4py import MPI
+from petsc4py import PETSc
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -30,6 +31,20 @@ class BenchmarkResult:
         return asdict(self)
 
 
+def get_converged_reason_str(reason_int: int, is_nonlinear: bool = False) -> str:
+    """
+    Dynamically maps a petsc4py convergence integer to its string name.
+    """
+    reason_class = PETSc.SNES.ConvergedReason if is_nonlinear else PETSc.KSP.ConvergedReason
+
+    # Create a reverse mapping dict: { 2: 'CONVERGED_RTOL', -3: 'DIVERGED_LINEAR_SOLVE', ... }
+    # We ignore internal Python attributes that start with '_'
+    mapping = {getattr(reason_class, attr): attr for attr in dir(reason_class) if not attr.startswith("_")}
+
+    # Return the string, or fallback to the integer string if not found
+    return mapping.get(reason_int, str(reason_int))
+
+
 def fill_provenance(result: BenchmarkResult) -> None:
     """Runtime equivalent of the CMake compile-time git_version.h baking."""
     sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT).stdout.strip()
@@ -53,7 +68,7 @@ def fill_solve_results_ksp(ksp, result: BenchmarkResult) -> None:
     result.residual = ksp.getResidualNorm()
     reason = ksp.getConvergedReason()
     result.converged_reason = int(reason)
-    result.converged_reason_string = str(reason)
+    result.converged_reason_string = get_converged_reason_str(reason, is_nonlinear=False)
     result.success = reason > 0
 
 
