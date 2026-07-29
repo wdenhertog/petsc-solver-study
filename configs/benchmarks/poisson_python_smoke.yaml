@@ -1,0 +1,16 @@
+problems:
+  poisson:
+    kind: linear
+    mesh_sweep:
+      n: [64]
+    param_sweep: {}
+    labels:
+      n: Mesh size (n)
+    solver_sweep:
+      ksp:
+        - ksp_type: cg
+          extra: {}
+      pc:
+        - pc_type: jacobi
+          extra: {}
+      direct: []

@@ -24,7 +24,7 @@ class BenchmarkResult:
     git_sha: str = ""
     git_dirty: bool = False
     petsc_version: str = ""
-    backend: str = "python"  # NEW field vs. the C++ struct — see backend-aware schema
+    backend: str = "python"
 
     def to_json_dict(self) -> dict:
         return asdict(self)
