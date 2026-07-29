@@ -16,9 +16,12 @@ plot = "python scripts/plot_results.py"
 dashboard = "streamlit run scripts/dashboard.py"
 
 [dependencies]
-python = "3.12.*"
+python = "3.13.*"
 pandas = ">=3.0.3,<4"
 matplotlib = ">=3.11.1,<4"
 plotly = ">=6.9.0,<7"
 streamlit = ">=1.60.0,<2"
 pyyaml = ">=6.0.3,<7"
+mpi4py = "*"
+petsc4py = "*"
+fenics-dolfinx = ">=0.10.0,<0.12"
