@@ -16,12 +16,12 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"solve_time\": " << result.solve_time << ",\n";
     oss << "    \"peak_memory_bytes\": " << result.peak_memory_bytes << ",\n";
     oss << "    \"total_memory_bytes\": " << result.total_memory_bytes << ",\n";
-    oss << "    \"success\": " << result.success << ",\n";
+    oss << "    \"success\": " << (result.success ? "true" : "false") << ",\n";
     oss << "    \"converged_reason\": " << result.converged_reason << ",\n";
     oss << "    \"converged_reason_string\": \"" << result.converged_reason_string << "\",\n";
     oss << "    \"outer_iterations\": " << result.outer_iterations << ",\n";
     oss << "    \"git_sha\": \"" << result.git_sha << "\",\n";
-    oss << "    \"git_dirty\": " << result.git_dirty << ",\n";
+    oss << "    \"git_dirty\": " << (result.git_dirty ? "true" : "false") << ",\n";
     oss << "    \"petsc_version\": \"" << result.petsc_version << "\"\n";
     oss << "}";
     return oss.str();
