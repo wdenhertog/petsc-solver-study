@@ -22,7 +22,8 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"outer_iterations\": " << result.outer_iterations << ",\n";
     oss << "    \"git_sha\": \"" << result.git_sha << "\",\n";
     oss << "    \"git_dirty\": " << (result.git_dirty ? "true" : "false") << ",\n";
-    oss << "    \"petsc_version\": \"" << result.petsc_version << "\"\n";
+    oss << "    \"petsc_version\": \"" << result.petsc_version << "\",\n";
+    oss << "    \"backend\": \"" << result.backend << "\"\n";
     oss << "}";
     return oss.str();
 }
