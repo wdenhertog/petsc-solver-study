@@ -1,0 +1,16 @@
+problems:
+  stub:
+    kind: linear
+    mesh_sweep:
+      n: [10]
+    param_sweep: {}
+    labels:
+      n: dummy
+    solver_sweep:
+      ksp:
+        - ksp_type: cg
+          extra: {}
+      pc:
+        - pc_type: jacobi
+          extra: {}
+      direct: []

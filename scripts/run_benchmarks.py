@@ -141,8 +141,16 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
     return specs
 
 
+def build_command(backend: str, problem: str, nprocs: int) -> list[str]:
+    if backend == "cpp":
+        return ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN), "-problem", problem]
+    elif backend == "python":
+        return ["mpiexec", "-n", str(nprocs), "python3", "-m", "python_backend.runner", "-problem", problem]
+    raise ValueError(f"Unknown backend: {backend}")
+
+
 def run(spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, timeout_s=300) -> dict:
-    cmd = ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN), "-problem", spec["problem"]]
+    cmd = build_command(spec["backend"], spec["problem"], nprocs)
     for k, v in spec["mesh"].items():
         cmd += [f"-{k}", str(v)]
     for k, v in spec["param"].items():
@@ -155,7 +163,7 @@ def run(spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, tim
         cmd += ["-snes_max_it", str(snes_max_it), "-ksp_max_it", str(max_it)]
 
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT)
     except subprocess.TimeoutExpired:
         return {"error": f"Command timed out after {timeout_s} seconds", "timed_out": True}
 
@@ -225,6 +233,7 @@ def main():
         specs = build_run_specs(name, cfg)
         for s in specs:
             s["problem_kind"] = cfg["kind"]
+            s["backend"] = "python"
         all_specs.extend(specs)
 
     # 3. Slurm Variables
