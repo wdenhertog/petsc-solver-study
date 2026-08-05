@@ -39,7 +39,7 @@ def load_config(config_path: Path) -> dict:
         cfg = yaml.safe_load(fh)
 
     if not isinstance(cfg, dict):
-        raise ValueError(f"Config must be a mapping at top level: {config_path}")
+        raise TypeError(f"Config must be a mapping at top level: {config_path}")
     if (
         "problems" not in cfg
         or not isinstance(cfg["problems"], dict)
@@ -144,7 +144,7 @@ def parse_string_or_list_field(
     normalized = []
     for entry in resolved:
         if not isinstance(entry, str):
-            raise ValueError(
+            raise TypeError(
                 f"Problem '{problem_name}' field '{field_name}' entries must be strings, got {type(entry).__name__}."
             )
         entry = entry.strip().lower()
