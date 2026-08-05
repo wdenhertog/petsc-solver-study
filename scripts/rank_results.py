@@ -66,6 +66,8 @@ NON_INSTANCE_COLS = {
     "git_sha",
     "git_dirty",
     "petsc_version",
+    "backend",
+    "assembly_mode",
 }
 
 # Lower is better for both currently-supported ranking metrics.

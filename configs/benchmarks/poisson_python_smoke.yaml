@@ -1,6 +1,7 @@
 problems:
   poisson:
     backend: python
+    assembly_mode: manual, ufl_highlevel
     kind: linear
     mesh_sweep:
       n: [64]

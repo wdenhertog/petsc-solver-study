@@ -141,6 +141,8 @@ def get_instance_keys(problem_cfg: dict, sub_df: pd.DataFrame) -> list[str]:
         "git_sha",
         "git_dirty",
         "petsc_version",
+        "backend",
+        "assembly_mode",
     }
     exclude_cols.update(pr.SOLVER_FLAG_COLS)
 

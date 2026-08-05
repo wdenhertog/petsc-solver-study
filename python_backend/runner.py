@@ -31,6 +31,8 @@ from .benchmark_result import (
 from .problem import ProblemKind
 from .registry import make_problem
 
+VALID_ASSEMBLY_MODES = {"manual", "ufl_highlevel"}
+
 
 def main() -> None:
     comm = MPI.COMM_WORLD
@@ -46,33 +48,61 @@ def main() -> None:
             print("Missing required -problem flag", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        problem = make_problem(problem_name)
-    except ValueError as e:
+    assembly_mode = opts.getString("assembly_mode", "manual").strip().lower()
+    if assembly_mode not in VALID_ASSEMBLY_MODES:
         if comm.rank == 0:
-            print(str(e), file=sys.stderr)
+            allowed = ", ".join(sorted(VALID_ASSEMBLY_MODES))
+            print(
+                f"Unknown -assembly_mode '{assembly_mode}'. Allowed: {allowed}",
+                file=sys.stderr,
+            )
         sys.exit(1)
+    if assembly_mode == "manual":
+        try:
+            problem = make_problem(problem_name)
+        except ValueError as e:
+            if comm.rank == 0:
+                print(str(e), file=sys.stderr)
+            sys.exit(1)
+    elif assembly_mode == "ufl_highlevel":
+        if problem_name != "poisson":
+            if comm.rank == 0:
+                print(
+                    f"assembly_mode '{assembly_mode}' is currently only implemented for problem 'poisson'",
+                    file=sys.stderr,
+                )
+            sys.exit(1)
+        from .problems.poisson_ufl import PoissonProblemUFL
 
-    result = BenchmarkResult(problem=problem.name)
+        problem = PoissonProblemUFL()
+
+    result = BenchmarkResult(problem=problem.name, assembly_mode=assembly_mode)
     fill_provenance(result)
 
     if problem.kind == ProblemKind.LINEAR:
         n = opts.getInt("n", 64)
-        A, b, x = problem.assemble_linear(n=n)
+        if assembly_mode == "manual":
+            A, b, x = problem.assemble_linear(n=n)
 
-        ksp = PETSc.KSP().create(comm)
-        ksp.setOperators(A)
-        ksp.setFromOptions()  # options database only -- no hardcoded setType()
+            ksp = PETSc.KSP().create(comm)
+            ksp.setOperators(A)
+            ksp.setFromOptions()  # options database only -- no hardcoded setType()
 
-        t1 = MPI.Wtime()
-        ksp.setUp()
-        t2 = MPI.Wtime()
-        ksp.solve(b, x)
-        t3 = MPI.Wtime()
+            t1 = MPI.Wtime()
+            ksp.setUp()
+            t2 = MPI.Wtime()
+            ksp.solve(b, x)
+            t3 = MPI.Wtime()
 
-        result.dofs = problem.dofs()
-        result.setup_time = t2 - t1
-        result.solve_time = t3 - t2
+            result.dofs = problem.dofs()
+            result.setup_time = t2 - t1
+            result.solve_time = t3 - t2
+        else:
+            ksp, dofs, setup_time, solve_time = problem.solve_linear(n=n)
+            result.dofs = dofs
+            result.setup_time = setup_time
+            result.solve_time = solve_time
+
         fill_solve_results_ksp(ksp, result)
 
     elif problem.kind == ProblemKind.NONLINEAR:

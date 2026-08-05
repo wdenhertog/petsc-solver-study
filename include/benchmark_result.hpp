@@ -25,6 +25,7 @@ struct BenchmarkResult
     bool git_dirty = false;
     std::string petsc_version;
     std::string backend = "cpp";
+    std::string assembly_mode = "manual";
 };
 
 std::string to_json(const BenchmarkResult& result);

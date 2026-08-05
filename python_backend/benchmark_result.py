@@ -26,6 +26,7 @@ class BenchmarkResult:
     git_dirty: bool = False
     petsc_version: str = ""
     backend: str = "python"
+    assembly_mode: str = "manual"
 
     def to_json_dict(self) -> dict:
         return asdict(self)

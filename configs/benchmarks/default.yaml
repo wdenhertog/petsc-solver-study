@@ -1,6 +1,7 @@
 problems:
   poisson:
     backend: cpp
+    assembly_mode: manual
     kind: linear
     mesh_sweep:
       n: [32, 64, 128, 256, 512, 1024]
@@ -57,6 +58,7 @@ problems:
 
   bratu:
     backend: cpp
+    assembly_mode: manual
     kind: nonlinear
     mesh_sweep:
       n: [32, 64, 128, 256, 512, 1024]

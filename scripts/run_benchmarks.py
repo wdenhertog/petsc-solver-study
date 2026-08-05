@@ -28,6 +28,7 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 SMOKE_TEST = os.environ.get("SMOKE_TEST", "0") == "1"
 VALID_BACKENDS = {"cpp", "python"}
+VALID_ASSEMBLY_MODES = {"manual", "ufl_highlevel"}
 
 
 def load_config(config_path: Path) -> dict:
@@ -85,12 +86,11 @@ def is_valid_combo(solver_flags: dict, nprocs: int) -> bool:
     pc = solver_flags.get("pc_type")
     mat_solver = solver_flags.get("pc_factor_mat_solver_type")
 
-    if nprocs > 1 and pc in ["ilu", "lu", "cholesky"]:
-        # Allow the run ONLY if a parallel external package is specified
-        if mat_solver not in ["mumps", "superlu_dist", "pastix"]:
-            return False
-
-    return True
+    return not (
+        nprocs > 1
+        and pc in ["ilu", "lu", "cholesky"]
+        and mat_solver not in ["mumps", "superlu_dist", "pastix"]
+    )
 
 
 def product_dict(d: dict):
@@ -117,44 +117,82 @@ def flatten_extra(*configs) -> dict:
     return flags
 
 
-def resolve_backends(problem_name: str, problem_cfg: dict) -> list[str]:
-    backend = problem_cfg.get("backend")
-
-    if backend is None:
-        resolved = ["cpp"]
-    elif isinstance(backend, list):
-        if not backend:
+def parse_string_or_list_field(
+    problem_name: str, field_name: str, value, default: list[str]
+) -> list[str]:
+    if value is None:
+        resolved = default
+    elif isinstance(value, list):
+        if not value:
             raise ValueError(
-                f"Problem '{problem_name}' field 'backend' must not be an empty list."
+                f"Problem '{problem_name}' field '{field_name}' must not be an empty list."
             )
-        resolved = backend
-    elif isinstance(backend, str):
-        # Support both YAML list syntax (`backend: [cpp, python]`) and
-        # shorthand comma-separated string (`backend: cpp, python`).
-        resolved = [part.strip() for part in backend.split(",") if part.strip()]
+        resolved = value
+    elif isinstance(value, str):
+        # Support both YAML list syntax (`field: [a, b]`) and
+        # shorthand comma-separated string (`field: a, b`).
+        resolved = [part.strip() for part in value.split(",") if part.strip()]
         if not resolved:
             raise ValueError(
-                f"Problem '{problem_name}' field 'backend' must define at least one backend."
+                f"Problem '{problem_name}' field '{field_name}' must define at least one value."
             )
     else:
         raise ValueError(
-            f"Problem '{problem_name}' field 'backend' must be a string or list of strings."
+            f"Problem '{problem_name}' field '{field_name}' must be a string or list of strings."
         )
 
     normalized = []
-    for b in resolved:
-        if not isinstance(b, str):
-            raise TypeError(
-                f"Problem '{problem_name}' backend entries must be strings, got {type(b).__name__}."
+    for entry in resolved:
+        if not isinstance(entry, str):
+            raise ValueError(
+                f"Problem '{problem_name}' field '{field_name}' entries must be strings, got {type(entry).__name__}."
             )
-        b = b.strip().lower()
+        entry = entry.strip().lower()
+        if entry and entry not in normalized:
+            normalized.append(entry)
+
+    if not normalized:
+        raise ValueError(
+            f"Problem '{problem_name}' field '{field_name}' must define at least one value."
+        )
+
+    return normalized
+
+
+def resolve_backends(problem_name: str, problem_cfg: dict) -> list[str]:
+    backend = problem_cfg.get("backend")
+
+    normalized = parse_string_or_list_field(
+        problem_name=problem_name,
+        field_name="backend",
+        value=backend,
+        default=["cpp"],
+    )
+    for b in normalized:
         if b not in VALID_BACKENDS:
             allowed = ", ".join(sorted(VALID_BACKENDS))
             raise ValueError(
                 f"Problem '{problem_name}' has unknown backend '{b}'. Allowed: {allowed}."
             )
-        if b not in normalized:
-            normalized.append(b)
+
+    return normalized
+
+
+def resolve_assembly_modes(problem_name: str, problem_cfg: dict) -> list[str]:
+    assembly_mode = problem_cfg.get("assembly_mode")
+
+    normalized = parse_string_or_list_field(
+        problem_name=problem_name,
+        field_name="assembly_mode",
+        value=assembly_mode,
+        default=["manual"],
+    )
+    for mode in normalized:
+        if mode not in VALID_ASSEMBLY_MODES:
+            allowed = ", ".join(sorted(VALID_ASSEMBLY_MODES))
+            raise ValueError(
+                f"Problem '{problem_name}' has unknown assembly_mode '{mode}'. Allowed: {allowed}."
+            )
 
     return normalized
 
@@ -162,8 +200,14 @@ def resolve_backends(problem_name: str, problem_cfg: dict) -> list[str]:
 def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
     """Expand one problem's config into a flat list of benchmark specs."""
     backends = resolve_backends(problem_name, problem_cfg)
+    assembly_modes = resolve_assembly_modes(problem_name, problem_cfg)
     mesh_combos = product_dict(problem_cfg.get("mesh_sweep", {}))
     param_combos = product_dict(problem_cfg.get("param_sweep", {}))
+
+    if any(mode != "manual" for mode in assembly_modes) and "python" not in backends:
+        raise ValueError(
+            f"Problem '{problem_name}' uses non-manual assembly_mode but has no python backend."
+        )
 
     if problem_cfg["kind"] == "linear":
         solver_combos = [
@@ -185,22 +229,27 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
         raise ValueError(f"Unknown problem kind: {problem_cfg['kind']}")
 
     specs = []
-    for backend, mesh, param, solver in itertools.product(
-        backends, mesh_combos, param_combos, solver_combos
-    ):
-        specs.append(
-            {
-                "problem": problem_name,
-                "backend": backend,
-                "mesh": mesh,
-                "param": param,
-                "solver": solver,
-            }
-        )
+    for backend in backends:
+        backend_modes = ["manual"] if backend == "cpp" else assembly_modes
+        for assembly_mode, mesh, param, solver in itertools.product(
+            backend_modes, mesh_combos, param_combos, solver_combos
+        ):
+            specs.append(
+                {
+                    "problem": problem_name,
+                    "backend": backend,
+                    "assembly_mode": assembly_mode,
+                    "mesh": mesh,
+                    "param": param,
+                    "solver": solver,
+                }
+            )
     return specs
 
 
-def build_command(backend: str, problem: str, nprocs: int) -> list[str]:
+def build_command(
+    backend: str, problem: str, assembly_mode: str, nprocs: int
+) -> list[str]:
     if backend == "cpp":
         return ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN), "-problem", problem]
     elif backend == "python":
@@ -213,6 +262,8 @@ def build_command(backend: str, problem: str, nprocs: int) -> list[str]:
             "python_backend.runner",
             "-problem",
             problem,
+            "-assembly_mode",
+            assembly_mode,
         ]
     raise ValueError(f"Unknown backend: {backend}")
 
@@ -220,7 +271,7 @@ def build_command(backend: str, problem: str, nprocs: int) -> list[str]:
 def run(
     spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, timeout_s=300
 ) -> dict:
-    cmd = build_command(spec["backend"], spec["problem"], nprocs)
+    cmd = build_command(spec["backend"], spec["problem"], spec["assembly_mode"], nprocs)
     for k, v in spec["mesh"].items():
         cmd += [f"-{k}", str(v)]
     for k, v in spec["param"].items():
@@ -360,7 +411,7 @@ def main():
             # Print a clean summary of the solver parameters
             solver_summary = f"{spec['solver'].get('ksp_type', 'N/A')} + {spec['solver'].get('pc_type', 'N/A')}"
             print(
-                f" -> {spec['problem']} ({spec['backend']}) | Mesh: {spec['mesh']} | Solver: {solver_summary}"
+                f" -> {spec['problem']} ({spec['backend']}, {spec['assembly_mode']}) | Mesh: {spec['mesh']} | Solver: {solver_summary}"
             )
         print("...\nDry run complete. No simulations were executed.")
         return
@@ -374,6 +425,7 @@ def main():
                 result,
                 problem=spec["problem"],
                 backend=spec["backend"],
+                assembly_mode=spec["assembly_mode"],
                 nprocs=nprocs,
                 **spec["mesh"],
                 **spec["param"],
