@@ -9,6 +9,7 @@ setup/solve, fill a BenchmarkResult, print one JSON line from rank 0.
 
 import json
 import sys
+
 import petsc4py
 
 # MUST run before any `from petsc4py import PETSc`,
@@ -23,8 +24,8 @@ from petsc4py import PETSc
 
 from .benchmark_result import (
     BenchmarkResult,
-    fill_provenance,
     fill_memory_usage,
+    fill_provenance,
     fill_solve_results_ksp,
 )
 from .problem import ProblemKind

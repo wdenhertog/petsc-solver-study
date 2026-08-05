@@ -1,6 +1,6 @@
-from typing import Callable
+from collections.abc import Callable
 
-from .problem import Problem, ProblemKind
+from .problem import Problem
 from .problems.poisson import PoissonProblem
 
 ProblemRegistry = dict[str, Callable[[], Problem]]

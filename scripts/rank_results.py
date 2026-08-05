@@ -23,9 +23,10 @@ parameters from the run's config.yaml and dataset columns) combination.
 
 import argparse
 import json
-import pandas as pd
 import sys
 from pathlib import Path
+
+import pandas as pd
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -93,7 +94,9 @@ def load_run(run_dir: Path) -> pd.DataFrame:
                 try:
                     rows.append(json.loads(line))
                 except json.JSONDecodeError:
-                    print(f"WARNING: skipping malformed line in {f.name}", file=sys.stderr)
+                    print(
+                        f"WARNING: skipping malformed line in {f.name}", file=sys.stderr
+                    )
 
     print(f"Loaded {len(rows)} rows from {len(files)} files in {run_dir}")
     return pd.DataFrame(rows)
@@ -150,8 +153,10 @@ def infer_group_cols(valid: pd.DataFrame, run_config: dict | None) -> list[str]:
 def summarize(df: pd.DataFrame) -> None:
     n_total = len(df)
     n_error = int(df["error"].notna().sum()) if "error" in df else 0
-    n_timed_out = int((df["timed_out"] == True).sum()) if "timed_out" in df.columns else 0
-    n_success = int((df.get("success") == True).sum())  # noqa: E712
+    n_timed_out = (
+        int((df["timed_out"] == True).sum()) if "timed_out" in df.columns else 0
+    )
+    n_success = int((df.get("success") == True).sum())
 
     print("--- Run summary ---")
     print(f"total rows:      {n_total}")
@@ -163,15 +168,19 @@ def summarize(df: pd.DataFrame) -> None:
             continue
         distinct = df[col].dropna().unique()
         if len(distinct) > 1:
-            print(f"WARNING: multiple distinct values for '{col}' in this run folder: {list(distinct)}")
+            print(
+                f"WARNING: multiple distinct values for '{col}' in this run folder: {list(distinct)}"
+            )
             print("         Results may not be directly comparable across all rows.")
         elif len(distinct) == 1:
             print(f"{col}: {distinct[0]}")
     print("-------------------")
 
 
-def rank(df: pd.DataFrame, metric: str, top_n: int, group_cols: list[str]) -> pd.DataFrame:
-    valid = df[df.get("success") == True].copy()  # noqa: E712
+def rank(
+    df: pd.DataFrame, metric: str, top_n: int, group_cols: list[str]
+) -> pd.DataFrame:
+    valid = df[df.get("success") == True].copy()
     if valid.empty:
         sys.exit("No rows with success=True to rank.")
     if metric not in valid.columns:
@@ -190,12 +199,15 @@ def rank(df: pd.DataFrame, metric: str, top_n: int, group_cols: list[str]) -> pd
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Rank benchmark results from a run folder.")
+    parser = argparse.ArgumentParser(
+        description="Rank benchmark results from a run folder."
+    )
     parser.add_argument(
         "run_dir",
         nargs="?",
         type=Path,
-        help="Path to results/json/<run_id>/. Defaults to the most " "recently modified folder under results/json/.",
+        help="Path to results/json/<run_id>/. Defaults to the most "
+        "recently modified folder under results/json/.",
     )
     parser.add_argument(
         "--top-n",
@@ -212,7 +224,8 @@ def main():
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Also write every valid (success=True) row, unranked, " "to <name>_full.csv for ad hoc analysis.",
+        help="Also write every valid (success=True) row, unranked, "
+        "to <name>_full.csv for ad hoc analysis.",
     )
     args = parser.parse_args()
 
@@ -224,7 +237,7 @@ def main():
     run_config = load_run_config(run_dir)
     summarize(df)
 
-    valid = df[df.get("success") == True].copy()  # noqa: E712
+    valid = df[df.get("success") == True].copy()
     if valid.empty:
         sys.exit("No rows with success=True to rank.")
     group_cols = infer_group_cols(valid, run_config)
@@ -238,7 +251,7 @@ def main():
     print(f"\nWrote top-{args.top_n} rankings ({len(ranked)} rows) to {out_path}")
 
     if args.full:
-        valid = df[df.get("success") == True]  # noqa: E712
+        valid = df[df.get("success") == True]
         full_path = RESULTS_CSV_DIR / f"{run_dir.name}_full.csv"
         valid.to_csv(full_path, index=False)
         print(f"Wrote full valid dataset ({len(valid)} rows) to {full_path}")

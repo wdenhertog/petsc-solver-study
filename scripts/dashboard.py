@@ -34,8 +34,8 @@ import streamlit as st
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import plot_results as pr  # noqa: E402
-import rank_results as rr  # noqa: E402
+import plot_results as pr
+import rank_results as rr
 
 st.set_page_config(page_title="petsc-solver-study dashboard", layout="wide")
 
@@ -175,7 +175,9 @@ if not run_dirs:
     st.error(f"No run folders found under {pr.RESULTS_JSON_DIR}")
     st.stop()
 
-run_dir = st.sidebar.selectbox("Run folder", run_dirs, format_func=lambda d: d.name, index=0)
+run_dir = st.sidebar.selectbox(
+    "Run folder", run_dirs, format_func=lambda d: d.name, index=0
+)
 
 df_raw = load_run_cached(str(run_dir), run_dir.stat().st_mtime)
 config_path = find_run_config_path(run_dir)
@@ -184,7 +186,9 @@ if config_path is not None:
     run_config = load_yaml_cached(str(config_path), config_path.stat().st_mtime)
     st.sidebar.caption(f"Config: {config_path.name}")
 else:
-    st.sidebar.caption("Config: not found in run folder (using data-driven fallback controls)")
+    st.sidebar.caption(
+        "Config: not found in run folder (using data-driven fallback controls)"
+    )
 
 problems = sorted(df_raw["problem"].dropna().unique())
 problem = st.sidebar.selectbox("Problem", problems)
@@ -228,7 +232,9 @@ for key in instance_keys:
             value=default_value,
         )
     elif len(options) > 1:
-        value = st.sidebar.selectbox(label, options=options, index=options.index(default_value))
+        value = st.sidebar.selectbox(
+            label, options=options, index=options.index(default_value)
+        )
     else:
         value = options[0]
         st.sidebar.caption(f"{label}: {value} (single value in this run)")
@@ -253,7 +259,7 @@ st.title("petsc-solver-study — results dashboard")
 st.caption(f"Run: `{run_dir.name}`  •  Problem: `{problem}`")
 
 n_total = len(sub)
-n_success = int((sub["success"] == True).sum())  # noqa: E712
+n_success = int((sub["success"] == True).sum())
 n_error = int(sub["error"].notna().sum()) if "error" in sub else 0
 n_timed_out = int(sub["timed_out"].fillna(False).sum()) if "timed_out" in sub else 0
 
@@ -289,7 +295,9 @@ tab_names = [
 tabs = st.tabs(tab_names)
 
 with tabs[0]:
-    metric = st.radio("Metric", ["iterations", "outer_iterations"], horizontal=True, key="iter_metric")
+    metric = st.radio(
+        "Metric", ["iterations", "outer_iterations"], horizontal=True, key="iter_metric"
+    )
     iter_filters = {k: v for k, v in instance_filters.items() if k != "n"}
     fig = pr.plot_iterations_vs_dofs(
         sub,
@@ -325,7 +333,9 @@ with tabs[2]:
         st.info("No successful rows for this selection.")
 
 with tabs[3]:
-    fig = pr.plot_setup_vs_solve(sub, problem, n=n, nprocs=nprocs, instance_filters=instance_filters)
+    fig = pr.plot_setup_vs_solve(
+        sub, problem, n=n, nprocs=nprocs, instance_filters=instance_filters
+    )
     if fig is not None:
         st.pyplot(fig)
     else:
@@ -347,14 +357,18 @@ with tabs[5]:
 
 with tabs[6]:
     top_n = st.slider("Top N per group", min_value=1, max_value=25, value=10)
-    metric_choice = st.radio("Rank by", rr.METRIC_CHOICES, horizontal=True, key="rank_metric")
+    metric_choice = st.radio(
+        "Rank by", rr.METRIC_CHOICES, horizontal=True, key="rank_metric"
+    )
     rank_input = sub.drop(columns=["config_label"], errors="ignore")
-    valid_for_grouping = rank_input[rank_input.get("success") == True].copy()  # noqa: E712
+    valid_for_grouping = rank_input[rank_input.get("success") == True].copy()
     if valid_for_grouping.empty:
         st.info("No successful rows for this selection.")
     else:
         group_cols = rr.infer_group_cols(valid_for_grouping, run_config)
-        ranked = rr.rank(rank_input, metric=metric_choice, top_n=top_n, group_cols=group_cols)
+        ranked = rr.rank(
+            rank_input, metric=metric_choice, top_n=top_n, group_cols=group_cols
+        )
         st.dataframe(ranked, width="stretch")
         st.download_button(
             "Download this table as CSV",

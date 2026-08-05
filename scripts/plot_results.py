@@ -91,7 +91,14 @@ SOLVER_FLAG_COLS = [
 # without a kind-specific branch.
 DEFAULT_LEGEND_COLS = ["snes_type", "pc_type"]
 
-ALL_PLOTS = ["iterations_vs_dofs", "success_rate", "pareto", "setup_vs_solve", "strong_scaling", "memory_scaling"]
+ALL_PLOTS = [
+    "iterations_vs_dofs",
+    "success_rate",
+    "pareto",
+    "setup_vs_solve",
+    "strong_scaling",
+    "memory_scaling",
+]
 
 MEMORY_METRIC_CHOICES = ["peak_memory_bytes", "total_memory_bytes"]
 BYTES_PER_GIB = float(1024**3)
@@ -136,7 +143,9 @@ def load_run(run_dir: Path) -> pd.DataFrame:
                 try:
                     rows.append(json.loads(line))
                 except json.JSONDecodeError:
-                    print(f"WARNING: skipping malformed line in {f.name}", file=sys.stderr)
+                    print(
+                        f"WARNING: skipping malformed line in {f.name}", file=sys.stderr
+                    )
 
     df = pd.DataFrame(rows)
     print(f"Loaded {len(df)} rows from {len(files)} files in {run_dir}")
@@ -159,7 +168,9 @@ def prep(df: pd.DataFrame, problem: str, legend_cols: list[str]) -> pd.DataFrame
     return sub
 
 
-def apply_instance_filter(df: pd.DataFrame, n=None, nprocs=None, instance_filters: dict | None = None) -> pd.DataFrame:
+def apply_instance_filter(
+    df: pd.DataFrame, n=None, nprocs=None, instance_filters: dict | None = None
+) -> pd.DataFrame:
     """Fix problem-instance columns that are provided (not None) and present in df."""
     sub = df
     if n is not None and "n" in sub.columns:
@@ -177,7 +188,9 @@ def apply_instance_filter(df: pd.DataFrame, n=None, nprocs=None, instance_filter
     return sub
 
 
-def format_instance_context(instance_filters: dict | None, exclude_keys: set[str] | None = None) -> str:
+def format_instance_context(
+    instance_filters: dict | None, exclude_keys: set[str] | None = None
+) -> str:
     if not instance_filters:
         return ""
     exclude = exclude_keys or set()
@@ -192,7 +205,9 @@ def format_instance_context(instance_filters: dict | None, exclude_keys: set[str
     return f", {', '.join(parts)}" if parts else ""
 
 
-def best_of_per_group(df: pd.DataFrame, group_cols: list[str], x_col: str, metric: str) -> pd.DataFrame:
+def best_of_per_group(
+    df: pd.DataFrame, group_cols: list[str], x_col: str, metric: str
+) -> pd.DataFrame:
     """
     Collapse nuisance-flag variation: within each (group_cols..., x_col) cell,
     keep only the row with the best (lowest) metric value. This is what turns
@@ -216,11 +231,13 @@ def plot_iterations_vs_dofs(
     metric: str,
     instance_filters: dict | None = None,
 ):
-    sub = df[df["success"] == True]  # noqa: E712
+    sub = df[df["success"] == True]
     sub = apply_instance_filter(sub, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
         ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-        print(f"  [iterations_vs_dofs] no successful rows at nprocs={nprocs}{ctx}, skipping")
+        print(
+            f"  [iterations_vs_dofs] no successful rows at nprocs={nprocs}{ctx}, skipping"
+        )
         return
 
     best = best_of_per_group(sub, ["config_label"], "dofs", metric)
@@ -297,8 +314,10 @@ def plot_pareto(
     memory_metric: str,
     instance_filters: dict | None = None,
 ):
-    sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, n=n, nprocs=nprocs, instance_filters=instance_filters)
+    sub = df[df["success"] == True]
+    sub = apply_instance_filter(
+        sub, n=n, nprocs=nprocs, instance_filters=instance_filters
+    )
     if sub.empty:
         ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
         print(f"  [pareto] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping")
@@ -308,13 +327,27 @@ def plot_pareto(
 
     fig, ax = plt.subplots(figsize=(8, 6))
     for label, grp in sub.groupby("config_label"):
-        ax.scatter(grp["solve_time"], bytes_to_gib(grp[memory_metric]), alpha=0.5, s=25, label=label)
-    ax.plot(front["solve_time"], bytes_to_gib(front[memory_metric]), "k--", alpha=0.6, label="Pareto frontier")
+        ax.scatter(
+            grp["solve_time"],
+            bytes_to_gib(grp[memory_metric]),
+            alpha=0.5,
+            s=25,
+            label=label,
+        )
+    ax.plot(
+        front["solve_time"],
+        bytes_to_gib(front[memory_metric]),
+        "k--",
+        alpha=0.6,
+        label="Pareto frontier",
+    )
     ax.set_xlabel("solve_time (s)")
     ax.set_ylabel(memory_metric_label(memory_metric))
     inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
     metric_note = (
-        "per-rank max — will it fit" if memory_metric == "peak_memory_bytes" else "whole-job sum — resource cost"
+        "per-rank max — will it fit"
+        if memory_metric == "peak_memory_bytes"
+        else "whole-job sum — resource cost"
     )
     ax.set_title(
         f"{problem}: solve_time vs {memory_metric_label(memory_metric)} ({metric_note})\n"
@@ -336,11 +369,15 @@ def plot_setup_vs_solve(
     nprocs: int,
     instance_filters: dict | None = None,
 ):
-    sub = df[df["success"] == True]  # noqa: E712
-    sub = apply_instance_filter(sub, n=n, nprocs=nprocs, instance_filters=instance_filters)
+    sub = df[df["success"] == True]
+    sub = apply_instance_filter(
+        sub, n=n, nprocs=nprocs, instance_filters=instance_filters
+    )
     if sub.empty:
         ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-        print(f"  [setup_vs_solve] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping")
+        print(
+            f"  [setup_vs_solve] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping"
+        )
         return
 
     fig, ax = plt.subplots(figsize=(8, 6))
@@ -362,8 +399,10 @@ def plot_setup_vs_solve(
 # ---------------------------------------------------------------------------
 
 
-def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None):
-    sub = df[df["success"] == True]  # noqa: E712
+def plot_strong_scaling(
+    df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None
+):
+    sub = df[df["success"] == True]
     sub = apply_instance_filter(sub, n=n, instance_filters=instance_filters)
     if sub.empty:
         ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
@@ -406,8 +445,10 @@ def plot_strong_scaling(df: pd.DataFrame, problem: str, n: int, instance_filters
 # ---------------------------------------------------------------------------
 
 
-def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None):
-    sub = df[df["success"] == True]  # noqa: E712
+def plot_memory_scaling(
+    df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None
+):
+    sub = df[df["success"] == True]
     sub = apply_instance_filter(sub, n=n, instance_filters=instance_filters)
     if sub.empty:
         ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
@@ -419,7 +460,9 @@ def plot_memory_scaling(df: pd.DataFrame, problem: str, n: int, instance_filters
     color_for = {label: cmap(i % 10) for i, label in enumerate(labels)}
 
     peak_best = best_of_per_group(sub, ["config_label"], "nprocs", "peak_memory_bytes")
-    total_best = best_of_per_group(sub, ["config_label"], "nprocs", "total_memory_bytes")
+    total_best = best_of_per_group(
+        sub, ["config_label"], "nprocs", "total_memory_bytes"
+    )
 
     fig, ax = plt.subplots(figsize=(8, 6))
     for label, grp in peak_best.groupby("config_label"):
@@ -485,12 +528,15 @@ def save_fig(fig, out_dir: Path, name: str, plot_label: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate diagnostic plots from a benchmark run.")
+    parser = argparse.ArgumentParser(
+        description="Generate diagnostic plots from a benchmark run."
+    )
     parser.add_argument(
         "run_dir",
         nargs="?",
         type=Path,
-        help="Path to results/json/<run_id>/. Defaults to the most " "recently modified folder under results/json/.",
+        help="Path to results/json/<run_id>/. Defaults to the most "
+        "recently modified folder under results/json/.",
     )
     parser.add_argument(
         "--problem",
@@ -499,7 +545,11 @@ def main():
         help="Problem(s) to plot. Repeatable. Defaults to all problems present.",
     )
     parser.add_argument(
-        "--plots", nargs="+", choices=ALL_PLOTS, default=ALL_PLOTS, help="Which plots to generate. Defaults to all."
+        "--plots",
+        nargs="+",
+        choices=ALL_PLOTS,
+        default=ALL_PLOTS,
+        help="Which plots to generate. Defaults to all.",
     )
     parser.add_argument(
         "--iter-metric",
@@ -613,17 +663,25 @@ def main():
             )
             save_fig(fig, out_dir, "pareto", "pareto")
         if "setup_vs_solve" in args.plots:
-            fig = plot_setup_vs_solve(sub, problem, n=n, nprocs=args.nprocs, instance_filters=instance_filters)
+            fig = plot_setup_vs_solve(
+                sub, problem, n=n, nprocs=args.nprocs, instance_filters=instance_filters
+            )
             save_fig(fig, out_dir, "setup_vs_solve", "setup_vs_solve")
         if "strong_scaling" in args.plots:
-            fig = plot_strong_scaling(sub, problem, n=n, instance_filters=instance_filters)
+            fig = plot_strong_scaling(
+                sub, problem, n=n, instance_filters=instance_filters
+            )
             save_fig(fig, out_dir, "strong_scaling", "strong_scaling")
         if "memory_scaling" in args.plots:
-            fig = plot_memory_scaling(sub, problem, n=n, instance_filters=instance_filters)
+            fig = plot_memory_scaling(
+                sub, problem, n=n, instance_filters=instance_filters
+            )
             save_fig(fig, out_dir, "memory_scaling", "memory_scaling")
 
-        inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-        print(f"  wrote plots to {out_dir} (legend grouped by {legend_cols}" f"{inst_str})")
+        inst_str = format_instance_context(
+            instance_filters, exclude_keys={"n", "nprocs"}
+        )
+        print(f"  wrote plots to {out_dir} (legend grouped by {legend_cols}{inst_str})")
 
 
 if __name__ == "__main__":

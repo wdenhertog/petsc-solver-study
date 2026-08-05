@@ -7,14 +7,14 @@ The active config is copied into the run output folder so every result set is
 self-describing and reproducible.
 """
 
+import argparse
 import datetime
 import itertools
 import json
-import subprocess
-from pathlib import Path
 import math
 import os
-import argparse
+import subprocess
+from pathlib import Path
 
 import yaml
 
@@ -38,8 +38,14 @@ def load_config(config_path: Path) -> dict:
 
     if not isinstance(cfg, dict):
         raise ValueError(f"Config must be a mapping at top level: {config_path}")
-    if "problems" not in cfg or not isinstance(cfg["problems"], dict) or not cfg["problems"]:
-        raise ValueError(f"Config must define a non-empty 'problems' mapping: {config_path}")
+    if (
+        "problems" not in cfg
+        or not isinstance(cfg["problems"], dict)
+        or not cfg["problems"]
+    ):
+        raise ValueError(
+            f"Config must define a non-empty 'problems' mapping: {config_path}"
+        )
 
     return cfg
 
@@ -59,7 +65,9 @@ def snapshot_config(run_dir: Path, config: dict, source_path: Path):
         "meta": {
             "generated_by": "scripts/run_benchmarks.py",
             "source_config": source_config,
-            "copied_at_utc": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+            "copied_at_utc": datetime.datetime.now(datetime.UTC).isoformat(
+                timespec="seconds"
+            ),
         },
         **config,
     }
@@ -91,7 +99,9 @@ def product_dict(d: dict):
     if not d:
         return [{}]
     keys = list(d.keys())
-    return [dict(zip(keys, combo)) for combo in itertools.product(*[d[k] for k in keys])]
+    return [
+        dict(zip(keys, combo)) for combo in itertools.product(*[d[k] for k in keys])
+    ]
 
 
 def flatten_extra(*configs) -> dict:
@@ -114,7 +124,9 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
     if problem_cfg["kind"] == "linear":
         solver_combos = [
             flatten_extra(pc, ksp)
-            for pc, ksp in itertools.product(problem_cfg["solver_sweep"]["pc"], problem_cfg["solver_sweep"]["ksp"])
+            for pc, ksp in itertools.product(
+                problem_cfg["solver_sweep"]["pc"], problem_cfg["solver_sweep"]["ksp"]
+            )
         ] + [flatten_extra(d) for d in problem_cfg["solver_sweep"].get("direct", [])]
     elif problem_cfg["kind"] == "nonlinear":
         solver_combos = [
@@ -129,7 +141,9 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
         raise ValueError(f"Unknown problem kind: {problem_cfg['kind']}")
 
     specs = []
-    for mesh, param, solver in itertools.product(mesh_combos, param_combos, solver_combos):
+    for mesh, param, solver in itertools.product(
+        mesh_combos, param_combos, solver_combos
+    ):
         specs.append(
             {
                 "problem": problem_name,
@@ -145,11 +159,22 @@ def build_command(backend: str, problem: str, nprocs: int) -> list[str]:
     if backend == "cpp":
         return ["mpiexec", "-n", str(nprocs), str(BENCHMARK_BIN), "-problem", problem]
     elif backend == "python":
-        return ["mpiexec", "-n", str(nprocs), "python3", "-m", "python_backend.runner", "-problem", problem]
+        return [
+            "mpiexec",
+            "-n",
+            str(nprocs),
+            "python3",
+            "-m",
+            "python_backend.runner",
+            "-problem",
+            problem,
+        ]
     raise ValueError(f"Unknown backend: {backend}")
 
 
-def run(spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, timeout_s=300) -> dict:
+def run(
+    spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, timeout_s=300
+) -> dict:
     cmd = build_command(spec["backend"], spec["problem"], nprocs)
     for k, v in spec["mesh"].items():
         cmd += [f"-{k}", str(v)]
@@ -163,9 +188,14 @@ def run(spec: dict, nprocs: int, max_it: int = 3000, snes_max_it: int = 100, tim
         cmd += ["-snes_max_it", str(snes_max_it), "-ksp_max_it", str(max_it)]
 
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT)
+        out = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT
+        )
     except subprocess.TimeoutExpired:
-        return {"error": f"Command timed out after {timeout_s} seconds", "timed_out": True}
+        return {
+            "error": f"Command timed out after {timeout_s} seconds",
+            "timed_out": True,
+        }
 
     try:
         return json.loads(out.stdout)
@@ -189,7 +219,9 @@ def log(f, result: dict, **context):
 
 def main():
     parser = argparse.ArgumentParser(description="Run PETSc Solver Benchmarks")
-    parser.add_argument("--dry-run", action="store_true", help="Print execution plan without running")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print execution plan without running"
+    )
     parser.add_argument(
         "--config",
         type=Path,
@@ -203,7 +235,9 @@ def main():
 
     default_cfg = SMOKE_CONFIG_PATH if SMOKE_TEST else DEFAULT_CONFIG_PATH
     config_path = args.config or default_cfg
-    config_path = config_path if config_path.is_absolute() else (REPO_ROOT / config_path)
+    config_path = (
+        config_path if config_path.is_absolute() else (REPO_ROOT / config_path)
+    )
 
     try:
         config = load_config(config_path)
@@ -216,7 +250,10 @@ def main():
     if run_id is None:
         sha = (
             subprocess.run(
-                ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
+                ["git", "rev-parse", "--short", "HEAD"],
+                capture_output=True,
+                text=True,
+                cwd=REPO_ROOT,
             ).stdout.strip()
             or "nogit"
         )
@@ -263,8 +300,10 @@ def main():
     print(f"SLURM_ARRAY_TASK_COUNT: {array_count}")
     print(f"CHUNK SIZE:             {chunk_size}")
     print("=" * 55)
-    print(f"Array Task {array_id}/{array_count-1}:")
-    print(f"Assigned jobs {start_idx} to {end_idx-1} ({len(my_jobs)} runs) -> {results_file}")
+    print(f"Array Task {array_id}/{array_count - 1}:")
+    print(
+        f"Assigned jobs {start_idx} to {end_idx - 1} ({len(my_jobs)} runs) -> {results_file}"
+    )
 
     if not my_jobs:
         print("No jobs fall into this chunk. Exiting.")
@@ -276,7 +315,9 @@ def main():
         for nprocs, spec in my_jobs[:3]:
             # Print a clean summary of the solver parameters
             solver_summary = f"{spec['solver'].get('ksp_type', 'N/A')} + {spec['solver'].get('pc_type', 'N/A')}"
-            print(f" -> {spec['problem']} | Mesh: {spec['mesh']} | Solver: {solver_summary}")
+            print(
+                f" -> {spec['problem']} | Mesh: {spec['mesh']} | Solver: {solver_summary}"
+            )
         print("...\nDry run complete. No simulations were executed.")
         return
 

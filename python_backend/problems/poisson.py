@@ -13,8 +13,6 @@ instance, not two different problems that happen to share a name:
     KSP creation, setFromOptions(), timing, and result extraction
 """
 
-from mpi4py import MPI
-from petsc4py import PETSc
 from dolfinx import fem, mesh
 from dolfinx.fem.petsc import (
     apply_lifting,
@@ -22,6 +20,8 @@ from dolfinx.fem.petsc import (
     assemble_vector,
     set_bc,
 )
+from mpi4py import MPI
+from petsc4py import PETSc
 from ufl import SpatialCoordinate, TestFunction, TrialFunction, dx, exp, grad, inner
 
 from ..problem import Problem, ProblemKind
@@ -71,7 +71,9 @@ class PoissonProblem(Problem):
         """
         comm = MPI.COMM_WORLD
 
-        self.domain = mesh.create_unit_square(comm, n - 1, n - 1, mesh.CellType.triangle)
+        self.domain = mesh.create_unit_square(
+            comm, n - 1, n - 1, mesh.CellType.triangle
+        )
         self.V = fem.functionspace(self.domain, ("Lagrange", 1))
 
         u = TrialFunction(self.V)
