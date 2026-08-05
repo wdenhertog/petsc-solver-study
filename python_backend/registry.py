@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from .problem import Problem
+from .problems.bratu_manual import BratuProblemManual
 from .problems.poisson import PoissonProblem
 
 ProblemRegistry = dict[str, Callable[[], Problem]]
@@ -9,7 +10,7 @@ ProblemRegistry = dict[str, Callable[[], Problem]]
 def make_registry() -> ProblemRegistry:
     registry: ProblemRegistry = {}
     registry["poisson"] = PoissonProblem
-    # registry["bratu"] = BratuProblem       # Step 3
+    registry["bratu"] = BratuProblemManual
     # registry["heat"] = HeatProblem         # Phase E
     # registry["wave"] = WaveProblem         # Phase E
     return registry

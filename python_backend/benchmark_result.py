@@ -83,6 +83,18 @@ def fill_solve_results_ksp(ksp, result: BenchmarkResult) -> None:
     result.success = reason > 0
 
 
+def fill_solve_results_snes(snes, result: BenchmarkResult) -> None:
+    reason = snes.getConvergedReason()
+    result.converged_reason = int(reason)
+    result.converged_reason_string = get_converged_reason_str(
+        reason, is_nonlinear=True
+    )
+    result.success = reason > 0
+    result.iterations = snes.getLinearSolveIterations()
+    result.outer_iterations = snes.getIterationNumber()
+    result.residual = snes.getFunctionNorm()
+
+
 def fill_memory_usage(result: BenchmarkResult) -> None:
     """Mirrors fill_memory_usage() in benchmark_result.cpp. Uses process
     RSS via `resource` — note this measures a different quantity than

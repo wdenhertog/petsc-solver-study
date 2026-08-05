@@ -27,6 +27,7 @@ from .benchmark_result import (
     fill_memory_usage,
     fill_provenance,
     fill_solve_results_ksp,
+    fill_solve_results_snes,
 )
 from .problem import ProblemKind
 from .registry import make_problem
@@ -65,16 +66,21 @@ def main() -> None:
                 print(str(e), file=sys.stderr)
             sys.exit(1)
     elif assembly_mode == "ufl_highlevel":
-        if problem_name != "poisson":
+        if problem_name == "poisson":
+            from .problems.poisson_ufl import PoissonProblemUFL
+
+            problem = PoissonProblemUFL()
+        elif problem_name == "bratu":
+            from .problems.bratu_ufl import BratuProblemUFL
+
+            problem = BratuProblemUFL()
+        else:
             if comm.rank == 0:
                 print(
-                    f"assembly_mode '{assembly_mode}' is currently only implemented for problem 'poisson'",
+                    f"assembly_mode '{assembly_mode}' is currently only implemented for problems 'poisson' and 'bratu'",
                     file=sys.stderr,
                 )
             sys.exit(1)
-        from .problems.poisson_ufl import PoissonProblemUFL
-
-        problem = PoissonProblemUFL()
 
     result = BenchmarkResult(problem=problem.name, assembly_mode=assembly_mode)
     fill_provenance(result)
@@ -106,7 +112,26 @@ def main() -> None:
         fill_solve_results_ksp(ksp, result)
 
     elif problem.kind == ProblemKind.NONLINEAR:
-        raise NotImplementedError("Nonlinear dispatch arrives in Step 3")
+        n = opts.getInt("n", 64)
+        lam = opts.getReal("lambda", 6.0)
+        if assembly_mode == "manual":
+            snes, x = problem.assemble_nonlinear(n=n, lam=lam)
+            t1 = MPI.Wtime()
+            snes.setUp()
+            t2 = MPI.Wtime()
+            snes.solve(None, x)
+            t3 = MPI.Wtime()
+
+            result.dofs = problem.dofs()
+            result.setup_time = t2 - t1
+            result.solve_time = t3 - t2
+        else:
+            snes, dofs, setup_time, solve_time = problem.solve_nonlinear(n=n, lam=lam)
+            result.dofs = dofs
+            result.setup_time = setup_time
+            result.solve_time = solve_time
+
+        fill_solve_results_snes(snes, result)
 
     elif problem.kind == ProblemKind.TRANSIENT:
         raise NotImplementedError("Transient dispatch arrives in Phase E")
