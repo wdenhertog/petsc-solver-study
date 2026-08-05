@@ -1,5 +1,6 @@
 problems:
   poisson:
+    backend: cpp, python
     kind: linear
     mesh_sweep:
       n: [64]
@@ -17,6 +18,7 @@ problems:
       direct: []
 
   bratu:
+    backend: cpp
     kind: nonlinear
     mesh_sweep:
       n: [64]

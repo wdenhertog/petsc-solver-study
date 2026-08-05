@@ -27,6 +27,7 @@ SMOKE_CONFIG_PATH = CONFIGS_DIR / "smoke.yaml"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 SMOKE_TEST = os.environ.get("SMOKE_TEST", "0") == "1"
+VALID_BACKENDS = {"cpp", "python"}
 
 
 def load_config(config_path: Path) -> dict:
@@ -116,8 +117,51 @@ def flatten_extra(*configs) -> dict:
     return flags
 
 
+def resolve_backends(problem_name: str, problem_cfg: dict) -> list[str]:
+    backend = problem_cfg.get("backend")
+
+    if backend is None:
+        resolved = ["cpp"]
+    elif isinstance(backend, list):
+        if not backend:
+            raise ValueError(
+                f"Problem '{problem_name}' field 'backend' must not be an empty list."
+            )
+        resolved = backend
+    elif isinstance(backend, str):
+        # Support both YAML list syntax (`backend: [cpp, python]`) and
+        # shorthand comma-separated string (`backend: cpp, python`).
+        resolved = [part.strip() for part in backend.split(",") if part.strip()]
+        if not resolved:
+            raise ValueError(
+                f"Problem '{problem_name}' field 'backend' must define at least one backend."
+            )
+    else:
+        raise ValueError(
+            f"Problem '{problem_name}' field 'backend' must be a string or list of strings."
+        )
+
+    normalized = []
+    for b in resolved:
+        if not isinstance(b, str):
+            raise TypeError(
+                f"Problem '{problem_name}' backend entries must be strings, got {type(b).__name__}."
+            )
+        b = b.strip().lower()
+        if b not in VALID_BACKENDS:
+            allowed = ", ".join(sorted(VALID_BACKENDS))
+            raise ValueError(
+                f"Problem '{problem_name}' has unknown backend '{b}'. Allowed: {allowed}."
+            )
+        if b not in normalized:
+            normalized.append(b)
+
+    return normalized
+
+
 def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
-    """Expand one problem's config into a flat list of {mesh, param, solver} combos."""
+    """Expand one problem's config into a flat list of benchmark specs."""
+    backends = resolve_backends(problem_name, problem_cfg)
     mesh_combos = product_dict(problem_cfg.get("mesh_sweep", {}))
     param_combos = product_dict(problem_cfg.get("param_sweep", {}))
 
@@ -141,12 +185,13 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
         raise ValueError(f"Unknown problem kind: {problem_cfg['kind']}")
 
     specs = []
-    for mesh, param, solver in itertools.product(
-        mesh_combos, param_combos, solver_combos
+    for backend, mesh, param, solver in itertools.product(
+        backends, mesh_combos, param_combos, solver_combos
     ):
         specs.append(
             {
                 "problem": problem_name,
+                "backend": backend,
                 "mesh": mesh,
                 "param": param,
                 "solver": solver,
@@ -270,7 +315,6 @@ def main():
         specs = build_run_specs(name, cfg)
         for s in specs:
             s["problem_kind"] = cfg["kind"]
-            s["backend"] = "python"
         all_specs.extend(specs)
 
     # 3. Slurm Variables
@@ -316,7 +360,7 @@ def main():
             # Print a clean summary of the solver parameters
             solver_summary = f"{spec['solver'].get('ksp_type', 'N/A')} + {spec['solver'].get('pc_type', 'N/A')}"
             print(
-                f" -> {spec['problem']} | Mesh: {spec['mesh']} | Solver: {solver_summary}"
+                f" -> {spec['problem']} ({spec['backend']}) | Mesh: {spec['mesh']} | Solver: {solver_summary}"
             )
         print("...\nDry run complete. No simulations were executed.")
         return
@@ -329,6 +373,7 @@ def main():
                 f,
                 result,
                 problem=spec["problem"],
+                backend=spec["backend"],
                 nprocs=nprocs,
                 **spec["mesh"],
                 **spec["param"],

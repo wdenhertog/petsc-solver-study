@@ -1,5 +1,6 @@
 problems:
   poisson:
+    backend: python
     kind: linear
     mesh_sweep:
       n: [64]
