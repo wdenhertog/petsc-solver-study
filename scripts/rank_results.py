@@ -16,6 +16,8 @@ Usage:
 Output:
     results/csv/<run_dir_name>.csv           top-N ranked rows per group
     results/csv/<run_dir_name>_full.csv       (only with --full) every valid row, unranked
+    results/csv/<run_dir_name>_backend_diff.csv  (only with --compare-backends)
+                                                  matched cpp/python deltas
 
 A "group" is one (problem, nprocs, plus any problem-instance sweep
 parameters from the run's config.yaml and dataset columns) combination.
@@ -27,6 +29,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import plot_results as pr
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -200,6 +203,27 @@ def rank(
     return ranked.sort_values(group_cols + ["rank"]).reset_index(drop=True)
 
 
+def write_backend_comparison(df: pd.DataFrame, run_dir: Path) -> None:
+    if "problem" not in df.columns:
+        print("No 'problem' column found; skipping backend comparison.")
+        return
+
+    compare_tables = []
+    for problem in sorted(df["problem"].dropna().unique()):
+        compared = pr.compare_backends(df, problem)
+        if not compared.empty:
+            compare_tables.append(compared)
+
+    if not compare_tables:
+        print("No matched cpp/python rows found for backend comparison.")
+        return
+
+    backend_diff = pd.concat(compare_tables, ignore_index=True)
+    out_path = RESULTS_CSV_DIR / f"{run_dir.name}_backend_diff.csv"
+    backend_diff.to_csv(out_path, index=False)
+    print(f"Wrote backend comparison ({len(backend_diff)} rows) to {out_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Rank benchmark results from a run folder."
@@ -229,6 +253,11 @@ def main():
         help="Also write every valid (success=True) row, unranked, "
         "to <name>_full.csv for ad hoc analysis.",
     )
+    parser.add_argument(
+        "--compare-backends",
+        action="store_true",
+        help="Write cpp/python matched-row deltas to <name>_backend_diff.csv.",
+    )
     args = parser.parse_args()
 
     run_dir = args.run_dir or find_latest_run_dir()
@@ -257,6 +286,9 @@ def main():
         full_path = RESULTS_CSV_DIR / f"{run_dir.name}_full.csv"
         valid.to_csv(full_path, index=False)
         print(f"Wrote full valid dataset ({len(valid)} rows) to {full_path}")
+
+    if args.compare_backends:
+        write_backend_comparison(df, run_dir)
 
 
 if __name__ == "__main__":

@@ -219,6 +219,71 @@ def best_of_per_group(
     return df.loc[idx]
 
 
+def compare_backends(
+    df: pd.DataFrame,
+    problem: str,
+    join_cols: list[str] | None = None,
+) -> pd.DataFrame:
+    """
+    Compare cpp and python rows for one problem on matching solver/instance keys.
+    Returns one row per matched pair with timing/iteration deltas.
+    """
+    if "backend" not in df.columns:
+        return pd.DataFrame()
+
+    problem_rows = df[df["problem"] == problem].copy()
+    if problem_rows.empty:
+        return pd.DataFrame()
+
+    cpp = problem_rows[problem_rows["backend"] == "cpp"].copy()
+    py = problem_rows[problem_rows["backend"] == "python"].copy()
+    if cpp.empty or py.empty:
+        return pd.DataFrame()
+
+    join_keys = join_cols or (SOLVER_FLAG_COLS + ["n", "nprocs"])
+    join_keys = [c for c in join_keys if c in cpp.columns and c in py.columns]
+
+    # Keep mode visible in output even if not used as a join key.
+    if "assembly_mode" in py.columns and "assembly_mode" not in join_keys:
+        py = py.rename(columns={"assembly_mode": "assembly_mode_python"})
+    if "assembly_mode" in cpp.columns and "assembly_mode" not in join_keys:
+        cpp = cpp.rename(columns={"assembly_mode": "assembly_mode_cpp"})
+
+    merged = cpp.merge(py, on=join_keys, how="inner", suffixes=("_cpp", "_python"))
+    if merged.empty:
+        return merged
+    merged["problem"] = problem
+
+    if "solve_time_cpp" in merged.columns and "solve_time_python" in merged.columns:
+        merged["solve_time_diff"] = (
+            merged["solve_time_python"] - merged["solve_time_cpp"]
+        )
+        merged["solve_time_ratio"] = merged["solve_time_python"] / merged[
+            "solve_time_cpp"
+        ].replace({0: pd.NA})
+    if "iterations_cpp" in merged.columns and "iterations_python" in merged.columns:
+        merged["iterations_diff"] = (
+            merged["iterations_python"] - merged["iterations_cpp"]
+        )
+    if (
+        "converged_reason_cpp" in merged.columns
+        and "converged_reason_python" in merged.columns
+    ):
+        merged["converged_reason_match"] = (
+            merged["converged_reason_python"] == merged["converged_reason_cpp"]
+        )
+    if "success_cpp" in merged.columns and "success_python" in merged.columns:
+        merged["success_match"] = merged["success_python"] == merged["success_cpp"]
+
+    front_cols = ["problem"]
+    front_cols += [c for c in join_keys if c in merged.columns]
+    for col in ["assembly_mode_cpp", "assembly_mode_python"]:
+        if col in merged.columns and col not in front_cols:
+            front_cols.append(col)
+    rest = [c for c in merged.columns if c not in front_cols]
+    return merged[front_cols + rest]
+
+
 # ---------------------------------------------------------------------------
 # Plot 1: Krylov iterations vs DOFs
 # ---------------------------------------------------------------------------

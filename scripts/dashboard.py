@@ -293,6 +293,7 @@ tab_names = [
     "strong_scaling",
     "memory_scaling",
     "ranked table",
+    "backend comparison",
 ]
 tabs = st.tabs(tab_names)
 
@@ -376,5 +377,22 @@ with tabs[6]:
             "Download this table as CSV",
             ranked.to_csv(index=False),
             file_name=f"{run_dir.name}_{problem}_top{top_n}_{metric_choice}.csv",
+            mime="text/csv",
+        )
+
+with tabs[7]:
+    compare_input = sub.drop(columns=["config_label"], errors="ignore")
+    compare_input = pr.apply_instance_filter(
+        compare_input, n=n, nprocs=nprocs, instance_filters=instance_filters
+    )
+    compared = pr.compare_backends(compare_input, problem)
+    if compared.empty:
+        st.info("No matched cpp/python rows for this selection.")
+    else:
+        st.dataframe(compared, width="stretch")
+        st.download_button(
+            "Download backend comparison as CSV",
+            compared.to_csv(index=False),
+            file_name=f"{run_dir.name}_{problem}_backend_diff.csv",
             mime="text/csv",
         )
