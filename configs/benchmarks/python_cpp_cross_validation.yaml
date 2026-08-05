@@ -1,0 +1,18 @@
+problems:
+  poisson:
+    backend: python, cpp
+    assembly_mode: manual, ufl_highlevel
+    kind: linear
+    mesh_sweep:
+      n: [64]
+    param_sweep: {}
+    labels:
+      n: Mesh size (n)
+    solver_sweep:
+      ksp:
+        - ksp_type: cg
+          extra: {}
+      pc:
+        - pc_type: jacobi
+          extra: {}
+      direct: []
