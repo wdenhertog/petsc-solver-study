@@ -172,6 +172,13 @@ def main() -> None:
             )
         sys.exit(1)
     if assembly_mode == "manual":
+        if problem_name == "wound_dressing":
+            if comm.rank == 0:
+                print(
+                    "Problem 'wound_dressing' uses the Python/UFL path; run with -assembly_mode ufl_highlevel.",
+                    file=sys.stderr,
+                )
+            sys.exit(1)
         try:
             problem = make_problem(problem_name)
         except ValueError as e:
@@ -191,10 +198,14 @@ def main() -> None:
             from .problems.heat_ufl import HeatProblemUFL
 
             problem = HeatProblemUFL()
+        elif problem_name == "wound_dressing":
+            from .problems.wound_dressing.benchmark import WoundDressingBenchProblem
+
+            problem = WoundDressingBenchProblem()
         else:
             if comm.rank == 0:
                 print(
-                    f"assembly_mode '{assembly_mode}' is currently only implemented for problems 'poisson', 'bratu', and 'heat'",
+                    f"assembly_mode '{assembly_mode}' is currently only implemented for problems 'poisson', 'bratu', 'heat', and 'wound_dressing'",
                     file=sys.stderr,
                 )
             sys.exit(1)
@@ -251,12 +262,20 @@ def main() -> None:
         fill_solve_results_snes(snes, result)
 
     elif problem.kind == ProblemKind.TRANSIENT:
-        try:
-            solve_transient_ts(problem, result, opts)
-        except ValueError as e:
-            if comm.rank == 0:
-                print(str(e), file=sys.stderr)
-            sys.exit(1)
+        if problem_name == "wound_dressing":
+            try:
+                problem.run_transient_benchmark(opts, result)
+            except Exception as e:
+                if comm.rank == 0:
+                    print(str(e), file=sys.stderr)
+                sys.exit(1)
+        else:
+            try:
+                solve_transient_ts(problem, result, opts)
+            except ValueError as e:
+                if comm.rank == 0:
+                    print(str(e), file=sys.stderr)
+                sys.exit(1)
 
     fill_memory_usage(result)
 

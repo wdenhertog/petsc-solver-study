@@ -1,0 +1,48 @@
+problems:
+  wound_dressing:
+    backend: python
+    assembly_mode: ufl_highlevel
+    kind: transient
+    mesh_sweep:
+      nx: [20, 30]
+      ny: [20, 30]
+      nz: [4]
+    param_sweep:
+      T_tilde: [0.1, 0.2]
+      t_star: [1.0]
+      Q0: [1e-7]
+      Q_inf: [5e-9]
+      tau: [2e5]
+      h_m: [1e-7]
+      S_eq: [0.5]
+      wound_size: [0.04]
+      H: [0.005]
+      L: [0.10]
+      W: [0.10]
+    labels:
+      nx: Mesh cells in x
+      ny: Mesh cells in y
+      nz: Mesh cells in z
+      T_tilde: Final nondimensional time
+      t_star: Time-scale multiplier
+      Q0: Initial wound flux
+      Q_inf: Chronic wound flux
+      tau: Flux decay time
+      h_m: Evaporation coefficient
+      S_eq: Equilibrium saturation
+      wound_size: Wound size
+      H: Dressing thickness
+      L: Dressing length
+      W: Dressing width
+    solver_sweep:
+      ts:
+        - ts_type: bdf
+          extra:
+            ts_bdf_order: 2
+      ksp:
+        - ksp_type: cg
+          extra: {}
+      pc:
+        - pc_type: jacobi
+          extra:
+            pc_jacobi_type: diagonal

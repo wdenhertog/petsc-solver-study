@@ -4,6 +4,7 @@ from .problem import Problem
 from .problems.bratu_manual import BratuProblemManual
 from .problems.heat_manual import HeatProblemManual
 from .problems.poisson import PoissonProblem
+from .problems.wound_dressing.benchmark import WoundDressingBenchProblem
 
 ProblemRegistry = dict[str, Callable[[], Problem]]
 
@@ -13,6 +14,7 @@ def make_registry() -> ProblemRegistry:
     registry["poisson"] = PoissonProblem
     registry["bratu"] = BratuProblemManual
     registry["heat"] = HeatProblemManual
+    registry["wound_dressing"] = WoundDressingBenchProblem
     # registry["wave"] = WaveProblem         # Phase E
     return registry
 
