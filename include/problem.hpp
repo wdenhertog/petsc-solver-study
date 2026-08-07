@@ -7,7 +7,7 @@ enum class ProblemKind
 {
     Linear,
     Nonlinear,
-    VariationalInequality
+  Transient
 };
 
 class Problem
@@ -20,5 +20,9 @@ class Problem
     // Only the relevant one gets called by the dispatcher, based on kind()
     virtual void assemble_linear(Mat& A, Vec& b, Vec& x) {}
     virtual void assemble_nonlinear(SNES snes, Vec& x) {}
-    virtual void assemble_vi(SNES snes, Vec& x, Vec& lower, Vec& upper) {}
+    virtual void assemble_transient(Mat& M, Mat& K, Vec& x) {}
+    virtual PetscReal transient_l2_error(Vec& x, PetscReal time)
+    {
+      return -1.0;
+    }
 };

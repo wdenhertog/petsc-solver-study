@@ -12,7 +12,12 @@ struct BenchmarkResult
     PetscInt mesh_size = 0;
     PetscInt dofs = 0;
     PetscInt iterations = 0;
+    PetscInt n_timesteps = 0;
+    PetscInt n_ksp_iterations_total = 0;
+    PetscInt n_snes_iterations_total = 0;
     PetscReal solve_time = 0.0, setup_time = 0.0;
+    PetscReal final_time = 0.0;
+    PetscReal l2_error_vs_exact = -1.0;
     PetscInt converged_reason;
     std::string converged_reason_string;
     PetscBool success;

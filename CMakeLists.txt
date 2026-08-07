@@ -21,6 +21,7 @@ add_executable(
         src/main.cpp
         src/benchmark_result.cpp
         src/problem_registry.cpp
+        src/problems/heat.cpp
         src/problems/poisson.cpp
         src/problems/bratu.cpp
 )

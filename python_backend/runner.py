@@ -9,6 +9,7 @@ setup/solve, fill a BenchmarkResult, print one JSON line from rank 0.
 
 import json
 import sys
+from dataclasses import dataclass
 
 import petsc4py
 
@@ -28,11 +29,123 @@ from .benchmark_result import (
     fill_provenance,
     fill_solve_results_ksp,
     fill_solve_results_snes,
+    get_ts_converged_reason_str,
 )
 from .problem import ProblemKind
 from .registry import make_problem
 
 VALID_ASSEMBLY_MODES = {"manual", "ufl_highlevel"}
+
+
+@dataclass
+class TransientTsCtx:
+    mass: PETSc.Mat
+    stiffness: PETSc.Mat
+    work: PETSc.Vec
+    imex_alpha: float
+
+    def ifunction(self, ts, t, x, xdot, f):
+        del ts, t
+        self.mass.mult(xdot, f)
+        self.stiffness.mult(x, self.work)
+        f.axpy(self.imex_alpha, self.work)
+
+    def ijacobian(self, ts, t, x, xdot, shift, A, B):
+        del ts, t, x, xdot
+        self.stiffness.copy(result=B)
+        B.scale(self.imex_alpha)
+        B.axpy(shift, self.mass, structure=PETSc.Mat.Structure.SUBSET_NONZERO_PATTERN)
+        if A != B:
+            B.copy(result=A)
+
+    def rhsfunction(self, ts, t, x, g):
+        del ts, t
+        self.stiffness.mult(x, g)
+        g.scale(-(1.0 - self.imex_alpha))
+
+    def rhsjacobian(self, ts, t, x, A, B):
+        del ts, t, x
+        self.stiffness.copy(result=B)
+        B.scale(-(1.0 - self.imex_alpha))
+        if A != B:
+            B.copy(result=A)
+
+
+def solve_transient_ts(problem, result: BenchmarkResult, opts: PETSc.Options) -> None:
+    n = opts.getInt("n", 64)
+    alpha = float(opts.getReal("alpha", 1.0))
+    dt = float(opts.getReal("ts_time_step", opts.getReal("ts_dt", 1.0e-3)))
+    max_time = float(opts.getReal("ts_max_time", 0.1))
+    max_steps = opts.getInt("ts_max_steps", 100000)
+    imex_alpha = max(0.0, min(1.0, float(opts.getReal("ts_imex_alpha", 1.0))))
+
+    mass, stiffness, x = problem.assemble_transient(n=n, alpha=alpha)
+
+    ts = PETSc.TS().create(MPI.COMM_WORLD)
+    ts.setProblemType(PETSc.TS.ProblemType.LINEAR)
+    ts.setSolution(x)
+    ts.setTime(0.0)
+    ts.setTimeStep(dt)
+    ts.setMaxTime(max_time)
+    ts.setMaxSteps(max_steps)
+
+    ctx = TransientTsCtx(
+        mass=mass,
+        stiffness=stiffness,
+        work=x.duplicate(),
+        imex_alpha=imex_alpha,
+    )
+
+    f = x.duplicate()
+    J = stiffness.copy()
+    ts.setIFunction(ctx.ifunction, f)
+    ts.setIJacobian(ctx.ijacobian, J, J)
+
+    g = None
+    R = None
+    if imex_alpha < 1.0 - 1.0e-14:
+        g = x.duplicate()
+        R = stiffness.copy()
+        ts.setRHSFunction(ctx.rhsfunction, g)
+        ts.setRHSJacobian(ctx.rhsjacobian, R, R)
+
+    ts.setFromOptions()
+
+    reason = PETSc.TS.ConvergedReason.CONVERGED_ITERATING
+    try:
+        t1 = MPI.Wtime()
+        ts.setUp()
+        t2 = MPI.Wtime()
+        ts.solve(x)
+        t3 = MPI.Wtime()
+
+        result.setup_time = t2 - t1
+        result.solve_time = t3 - t2
+        result.dofs = x.getSize()
+        result.iterations = ts.getKSPIterations()
+        result.n_ksp_iterations_total = ts.getKSPIterations()
+        result.n_snes_iterations_total = ts.getSNESIterations()
+        result.n_timesteps = ts.getStepNumber()
+        result.final_time = ts.getTime()
+        reason = ts.getConvergedReason()
+        result.converged_reason = int(reason)
+        result.converged_reason_string = get_ts_converged_reason_str(reason)
+        result.success = reason > 0
+        result.residual = x.norm()
+        l2_error = problem.transient_l2_error(x, result.final_time)
+        if l2_error is not None:
+            result.l2_error_vs_exact = float(l2_error)
+    finally:
+        if R is not None:
+            R.destroy()
+        if g is not None:
+            g.destroy()
+        J.destroy()
+        f.destroy()
+        ctx.work.destroy()
+        ts.destroy()
+        mass.destroy()
+        stiffness.destroy()
 
 
 def main() -> None:
@@ -74,10 +187,14 @@ def main() -> None:
             from .problems.bratu_ufl import BratuProblemUFL
 
             problem = BratuProblemUFL()
+        elif problem_name == "heat":
+            from .problems.heat_ufl import HeatProblemUFL
+
+            problem = HeatProblemUFL()
         else:
             if comm.rank == 0:
                 print(
-                    f"assembly_mode '{assembly_mode}' is currently only implemented for problems 'poisson' and 'bratu'",
+                    f"assembly_mode '{assembly_mode}' is currently only implemented for problems 'poisson', 'bratu', and 'heat'",
                     file=sys.stderr,
                 )
             sys.exit(1)
@@ -134,7 +251,12 @@ def main() -> None:
         fill_solve_results_snes(snes, result)
 
     elif problem.kind == ProblemKind.TRANSIENT:
-        raise NotImplementedError("Transient dispatch arrives in Phase E")
+        try:
+            solve_transient_ts(problem, result, opts)
+        except ValueError as e:
+            if comm.rank == 0:
+                print(str(e), file=sys.stderr)
+            sys.exit(1)
 
     fill_memory_usage(result)
 

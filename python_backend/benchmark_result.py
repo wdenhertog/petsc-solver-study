@@ -13,9 +13,14 @@ class BenchmarkResult:
     problem: str = ""
     dofs: int = 0
     iterations: int = 0
+    n_timesteps: int = 0
+    n_ksp_iterations_total: int = 0
+    n_snes_iterations_total: int = 0
     residual: float = 0.0
     setup_time: float = 0.0
     solve_time: float = 0.0
+    final_time: float = 0.0
+    l2_error_vs_exact: float = -1.0
     peak_memory_bytes: float = 0.0
     total_memory_bytes: float = 0.0
     success: bool = False
@@ -52,13 +57,30 @@ def get_converged_reason_str(reason_int: int, is_nonlinear: bool = False) -> str
     return mapping.get(reason_int, str(reason_int))
 
 
+def get_ts_converged_reason_str(reason_int: int) -> str:
+    mapping = {
+        getattr(PETSc.TS.ConvergedReason, attr): attr
+        for attr in dir(PETSc.TS.ConvergedReason)
+        if not attr.startswith("_")
+    }
+    return mapping.get(reason_int, str(reason_int))
+
+
 def fill_provenance(result: BenchmarkResult) -> None:
     """Runtime equivalent of the CMake compile-time git_version.h baking."""
     sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=REPO_ROOT
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
     ).stdout.strip()
     dirty_out = subprocess.run(
-        ["git", "status", "--porcelain"], capture_output=True, text=True, cwd=REPO_ROOT
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
     ).stdout.strip()
     result.git_sha = sha or "unknown"
     result.git_dirty = bool(dirty_out)
@@ -68,12 +90,13 @@ def fill_provenance(result: BenchmarkResult) -> None:
 
         major, minor, sub = PETSc.Sys.getVersion()[:3]
         result.petsc_version = f"{major}.{minor}.{sub}"
-    except Exception:
+    except (AttributeError, ImportError, TypeError, ValueError):
         result.petsc_version = "unknown"
 
 
 def fill_solve_results_ksp(ksp, result: BenchmarkResult) -> None:
     result.iterations = ksp.getIterationNumber()
+    result.n_ksp_iterations_total = result.iterations
     result.residual = ksp.getResidualNorm()
     reason = ksp.getConvergedReason()
     result.converged_reason = int(reason)
@@ -86,12 +109,12 @@ def fill_solve_results_ksp(ksp, result: BenchmarkResult) -> None:
 def fill_solve_results_snes(snes, result: BenchmarkResult) -> None:
     reason = snes.getConvergedReason()
     result.converged_reason = int(reason)
-    result.converged_reason_string = get_converged_reason_str(
-        reason, is_nonlinear=True
-    )
+    result.converged_reason_string = get_converged_reason_str(reason, is_nonlinear=True)
     result.success = reason > 0
     result.iterations = snes.getLinearSolveIterations()
+    result.n_ksp_iterations_total = result.iterations
     result.outer_iterations = snes.getIterationNumber()
+    result.n_snes_iterations_total = result.outer_iterations
     result.residual = snes.getFunctionNorm()
 
 

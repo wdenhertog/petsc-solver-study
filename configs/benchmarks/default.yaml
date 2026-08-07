@@ -103,3 +103,53 @@ problems:
         - pc_type: asm
           extra:
             pc_asm_overlap: 2
+
+  heat:
+    backend: cpp, python
+    assembly_mode: manual, ufl_highlevel
+    kind: transient
+    mesh_sweep:
+      n: [32, 64, 128]
+    param_sweep:
+      alpha: [1.0]
+      ts_time_step: [0.0025]
+      ts_max_time: [0.05]
+    labels:
+      n: Mesh size (n)
+      alpha: Diffusivity (alpha)
+      ts_time_step: Time step
+      ts_max_time: Final time
+    solver_sweep:
+      ts:
+        - ts_type: beuler
+          extra: {}
+        - ts_type: cn
+          extra: {}
+        - ts_type: theta
+          extra:
+            ts_theta_theta: 0.75
+        - ts_type: bdf
+          extra:
+            ts_bdf_order: 2
+        - ts_type: arkimex
+          extra:
+            ts_arkimex_type: ars122
+            ts_imex_alpha: 0.5
+      ksp:
+        - ksp_type: cg
+          extra: {}
+        - ksp_type: gmres
+          extra:
+            ksp_gmres_restart: 30
+      pc:
+        - pc_type: jacobi
+          extra:
+            pc_jacobi_type: diagonal
+        - pc_type: gamg
+          extra:
+            pc_gamg_type: agg
+      direct:
+        - ksp_type: preonly
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps

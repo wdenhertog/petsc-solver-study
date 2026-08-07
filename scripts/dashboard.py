@@ -106,9 +106,9 @@ def get_instance_keys(problem_cfg: dict, sub_df: pd.DataFrame) -> list[str]:
     params = problem_cfg.get("param_sweep", {}) if isinstance(problem_cfg, dict) else {}
 
     if isinstance(mesh, dict):
-        keys.extend([k for k in mesh.keys() if k in sub_df.columns])
+        keys.extend([k for k in mesh if k in sub_df.columns])
     if isinstance(params, dict):
-        keys.extend([k for k in params.keys() if k in sub_df.columns])
+        keys.extend([k for k in params if k in sub_df.columns])
 
     if "nprocs" in sub_df.columns and "nprocs" not in keys:
         keys = ["nprocs"] + keys
@@ -130,11 +130,16 @@ def get_instance_keys(problem_cfg: dict, sub_df: pd.DataFrame) -> list[str]:
         "converged_reason",
         "converged_reason_string",
         "iterations",
+        "n_timesteps",
+        "n_ksp_iterations_total",
+        "n_snes_iterations_total",
         "outer_iterations",
         "residual",
         "residual_norm",
         "setup_time",
         "solve_time",
+        "final_time",
+        "l2_error_vs_exact",
         "dofs",
         "peak_memory_bytes",
         "total_memory_bytes",

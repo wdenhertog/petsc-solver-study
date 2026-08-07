@@ -37,6 +37,11 @@ RESULTS_JSON_DIR = REPO_ROOT / "results" / "json"
 RESULTS_CSV_DIR = REPO_ROOT / "results" / "csv"
 
 SOLVER_FLAG_COLS = [
+    "ts_type",
+    "ts_theta_theta",
+    "ts_bdf_order",
+    "ts_arkimex_type",
+    "ts_imex_alpha",
     "snes_type",
     "snes_linesearch_type",
     "ksp_type",
@@ -58,11 +63,16 @@ NON_INSTANCE_COLS = {
     "converged_reason",
     "converged_reason_string",
     "iterations",
+    "n_timesteps",
+    "n_ksp_iterations_total",
+    "n_snes_iterations_total",
     "outer_iterations",
     "residual",
     "residual_norm",
     "setup_time",
     "solve_time",
+    "final_time",
+    "l2_error_vs_exact",
     "dofs",
     "peak_memory_bytes",
     "total_memory_bytes",

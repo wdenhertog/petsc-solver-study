@@ -11,9 +11,14 @@ std::string to_json(const BenchmarkResult& result)
     oss << "    \"problem\": \"" << result.problem << "\",\n";
     oss << "    \"dofs\": " << result.dofs << ",\n";
     oss << "    \"iterations\": " << result.iterations << ",\n";
+    oss << "    \"n_timesteps\": " << result.n_timesteps << ",\n";
+    oss << "    \"n_ksp_iterations_total\": " << result.n_ksp_iterations_total << ",\n";
+    oss << "    \"n_snes_iterations_total\": " << result.n_snes_iterations_total << ",\n";
     oss << "    \"residual\": " << result.residual_norm << ",\n";
     oss << "    \"setup_time\": " << result.setup_time << ",\n";
     oss << "    \"solve_time\": " << result.solve_time << ",\n";
+    oss << "    \"final_time\": " << result.final_time << ",\n";
+    oss << "    \"l2_error_vs_exact\": " << result.l2_error_vs_exact << ",\n";
     oss << "    \"peak_memory_bytes\": " << result.peak_memory_bytes << ",\n";
     oss << "    \"total_memory_bytes\": " << result.total_memory_bytes << ",\n";
     oss << "    \"success\": " << (result.success ? "true" : "false") << ",\n";
@@ -32,6 +37,7 @@ std::string to_json(const BenchmarkResult& result)
 void fill_solve_results(KSP ksp, BenchmarkResult& result)
 {
     KSPGetIterationNumber(ksp, &result.iterations);
+    result.n_ksp_iterations_total = result.iterations;
     KSPGetResidualNorm(ksp, &result.residual_norm);
 
     KSPConvergedReason reason;
@@ -52,7 +58,9 @@ void fill_solve_results(SNES snes, BenchmarkResult& result)
     PetscInt total_linear_its;
     SNESGetLinearSolveIterations(snes, &total_linear_its);
     result.iterations = total_linear_its;
+    result.n_ksp_iterations_total = total_linear_its;
     SNESGetIterationNumber(snes, &result.outer_iterations);
+    result.n_snes_iterations_total = result.outer_iterations;
 
     Vec F;
     SNESGetFunction(snes, &F, nullptr, nullptr);

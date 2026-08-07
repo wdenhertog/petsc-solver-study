@@ -1,6 +1,7 @@
 #include "problem_registry.hpp"
 
 #include "problems/bratu.hpp"
+#include "problems/heat.hpp"
 #include "problems/poisson.hpp"
 
 #include <sstream>
@@ -12,6 +13,7 @@ ProblemRegistry make_registry()
 
     registry["poisson"] = [] { return std::make_unique<PoissonProblem>(); };
     registry["bratu"] = [] { return std::make_unique<BratuProblem>(); };
+    registry["heat"] = [] { return std::make_unique<HeatProblem>(); };
 
     return registry;
 }

@@ -29,6 +29,7 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 SMOKE_TEST = os.environ.get("SMOKE_TEST", "0") == "1"
 VALID_BACKENDS = {"cpp", "python"}
 VALID_ASSEMBLY_MODES = {"manual", "ufl_highlevel"}
+VALID_PROBLEM_KINDS = {"linear", "nonlinear", "transient"}
 
 
 def load_config(config_path: Path) -> dict:
@@ -203,20 +204,27 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
     assembly_modes = resolve_assembly_modes(problem_name, problem_cfg)
     mesh_combos = product_dict(problem_cfg.get("mesh_sweep", {}))
     param_combos = product_dict(problem_cfg.get("param_sweep", {}))
+    problem_kind = problem_cfg["kind"]
+
+    if problem_kind not in VALID_PROBLEM_KINDS:
+        allowed = ", ".join(sorted(VALID_PROBLEM_KINDS))
+        raise ValueError(
+            f"Problem '{problem_name}' has unknown kind '{problem_kind}'. Allowed: {allowed}."
+        )
 
     if any(mode != "manual" for mode in assembly_modes) and "python" not in backends:
         raise ValueError(
             f"Problem '{problem_name}' uses non-manual assembly_mode but has no python backend."
         )
 
-    if problem_cfg["kind"] == "linear":
+    if problem_kind == "linear":
         solver_combos = [
             flatten_extra(pc, ksp)
             for pc, ksp in itertools.product(
                 problem_cfg["solver_sweep"]["pc"], problem_cfg["solver_sweep"]["ksp"]
             )
         ] + [flatten_extra(d) for d in problem_cfg["solver_sweep"].get("direct", [])]
-    elif problem_cfg["kind"] == "nonlinear":
+    elif problem_kind == "nonlinear":
         solver_combos = [
             flatten_extra(snes, ksp, pc)
             for snes, ksp, pc in itertools.product(
@@ -225,8 +233,23 @@ def build_run_specs(problem_name: str, problem_cfg: dict) -> list[dict]:
                 problem_cfg["solver_sweep"]["pc"],
             )
         ]
+    elif problem_kind == "transient":
+        solver_combos = [
+            flatten_extra(ts, ksp, pc)
+            for ts, ksp, pc in itertools.product(
+                problem_cfg["solver_sweep"]["ts"],
+                problem_cfg["solver_sweep"]["ksp"],
+                problem_cfg["solver_sweep"]["pc"],
+            )
+        ] + [
+            flatten_extra(ts, direct)
+            for ts, direct in itertools.product(
+                problem_cfg["solver_sweep"]["ts"],
+                problem_cfg["solver_sweep"].get("direct", []),
+            )
+        ]
     else:
-        raise ValueError(f"Unknown problem kind: {problem_cfg['kind']}")
+        raise ValueError(f"Unknown problem kind: {problem_kind}")
 
     specs = []
     for backend in backends:
@@ -282,10 +305,17 @@ def run(
         cmd += ["-ksp_max_it", str(max_it)]
     elif spec["problem_kind"] == "nonlinear":
         cmd += ["-snes_max_it", str(snes_max_it), "-ksp_max_it", str(max_it)]
+    elif spec["problem_kind"] == "transient":
+        cmd += ["-ksp_max_it", str(max_it)]
 
     try:
         out = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout_s, cwd=REPO_ROOT
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            cwd=REPO_ROOT,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return {
@@ -350,10 +380,11 @@ def main():
                 capture_output=True,
                 text=True,
                 cwd=REPO_ROOT,
+                check=False,
             ).stdout.strip()
             or "nogit"
         )
-        ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+        ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S")
         run_id = f"{ts}_{sha}"
 
     run_dir = RESULTS_DIR / run_id
@@ -369,9 +400,9 @@ def main():
         all_specs.extend(specs)
 
     # 3. Slurm Variables
-    array_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    array_count = int(os.environ.get("SLURM_ARRAY_TASK_COUNT", 1))
-    target_nprocs = int(os.environ.get("TARGET_NPROCS", 1))
+    array_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", "0"))
+    array_count = int(os.environ.get("SLURM_ARRAY_TASK_COUNT", "1"))
+    target_nprocs = int(os.environ.get("TARGET_NPROCS", "1"))
 
     # 4. Flatten the execution space ONLY for the requested nprocs
     flat_jobs = []

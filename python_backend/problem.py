@@ -28,3 +28,6 @@ class Problem(ABC):
 
     def assemble_transient(self):
         raise NotImplementedError(f"{self.name} does not implement assemble_transient")
+
+    def transient_l2_error(self, x, time: float):
+        return None

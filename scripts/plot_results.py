@@ -72,6 +72,11 @@ RESULTS_PLOTS_DIR = REPO_ROOT / "results" / "plots"
 
 # All flags that together fully specify *how* a problem was solved.
 SOLVER_FLAG_COLS = [
+    "ts_type",
+    "ts_theta_theta",
+    "ts_bdf_order",
+    "ts_arkimex_type",
+    "ts_imex_alpha",
     "snes_type",
     "snes_linesearch_type",
     "ksp_type",
@@ -89,7 +94,7 @@ SOLVER_FLAG_COLS = [
 # not present / all-NaN for a given problem (e.g. snes_type for poisson)
 # is silently dropped per-row, so this generalizes across problem kinds
 # without a kind-specific branch.
-DEFAULT_LEGEND_COLS = ["snes_type", "pc_type"]
+DEFAULT_LEGEND_COLS = ["ts_type", "snes_type", "pc_type"]
 
 ALL_PLOTS = [
     "iterations_vs_dofs",
