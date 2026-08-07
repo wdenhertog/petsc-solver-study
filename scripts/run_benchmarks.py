@@ -357,7 +357,19 @@ def main():
             "(or configs/benchmarks/smoke.yaml when SMOKE_TEST=1)."
         ),
     )
+    parser.add_argument(
+        "--timeout-s",
+        type=int,
+        default=int(os.environ.get("BENCH_TIMEOUT_S", "300")),
+        help=(
+            "Per-case wall-clock timeout in seconds for each launched benchmark "
+            "subprocess (default: BENCH_TIMEOUT_S env var or 300)."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.timeout_s <= 0:
+        raise SystemExit("--timeout-s must be a positive integer")
 
     default_cfg = SMOKE_CONFIG_PATH if SMOKE_TEST else DEFAULT_CONFIG_PATH
     config_path = args.config or default_cfg
@@ -425,6 +437,7 @@ def main():
     print(f"TOTAL VALID JOBS:       {len(flat_jobs)}")
     print(f"SLURM_ARRAY_TASK_COUNT: {array_count}")
     print(f"CHUNK SIZE:             {chunk_size}")
+    print(f"PER-CASE TIMEOUT (s):   {args.timeout_s}")
     print("=" * 55)
     print(f"Array Task {array_id}/{array_count - 1}:")
     print(
@@ -450,7 +463,7 @@ def main():
     # 8. Execute the chunk (Only reached if --dry-run is omitted)
     with open(results_file, "w") as f:
         for nprocs, spec in my_jobs:
-            result = run(spec, nprocs)
+            result = run(spec, nprocs, timeout_s=args.timeout_s)
             log(
                 f,
                 result,
