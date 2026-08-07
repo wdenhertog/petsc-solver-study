@@ -338,6 +338,16 @@ class WoundDressingSolver:
         self.t_star = t_star
         self.verb = verb
 
+        # Populated by run() after ts.solve() -- real solver stats pulled
+        # off the TS, same convention as solve_transient_ts() in
+        # python_backend/runner.py. Left at these defaults if run() is
+        # never called or ts.solve() raises before completing.
+        self.n_timesteps = 0
+        self.n_ksp_iterations_total = 0
+        self.n_snes_iterations_total = 0
+        self.final_time = 0.0
+        self.converged_reason = 0
+
         if problem.rank != 0:
             log.set_log_level(log.LogLevel.WARNING)
 
@@ -422,6 +432,7 @@ class WoundDressingSolver:
 
                 ts.setMonitor(monitor)
                 ts.solve(prob.p.x.petsc_vec)
+                self._capture_ts_stats(ts)
         else:
 
             def monitor(ts, step, t, U):
@@ -435,3 +446,16 @@ class WoundDressingSolver:
 
             ts.setMonitor(monitor)
             ts.solve(prob.p.x.petsc_vec)
+            self._capture_ts_stats(ts)
+
+    def _capture_ts_stats(self, ts) -> None:
+        """Pull cumulative solve stats off the TS after solve() returns.
+        ts.getKSPIterations()/getSNESIterations() are cumulative totals
+        across the whole adaptive time loop, not per-step -- same
+        quantities solve_transient_ts() in runner.py reports for the
+        heat/wave backends, so results stay comparable across problems."""
+        self.n_timesteps = ts.getStepNumber()
+        self.n_ksp_iterations_total = ts.getKSPIterations()
+        self.n_snes_iterations_total = ts.getSNESIterations()
+        self.final_time = ts.getTime()
+        self.converged_reason = int(ts.getConvergedReason())

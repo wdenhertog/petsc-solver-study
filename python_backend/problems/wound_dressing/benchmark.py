@@ -5,6 +5,7 @@ from pathlib import Path
 
 from mpi4py import MPI
 
+from ...benchmark_result import get_ts_converged_reason_str
 from ...problem import Problem, ProblemKind
 from .model import WoundDressingProblem, WoundDressingSolver
 from .parameters import (
@@ -73,15 +74,27 @@ class WoundDressingBenchProblem(Problem):
         solver.run()
         t2 = MPI.Wtime()
 
-        result.dofs = int(self._problem.p.x.array.shape[0])
+        # Global DOF count -- `.x.array` is the *local* (per-rank) slice
+        # and silently under-reports under MPI; `.x.petsc_vec.getSize()`
+        # is the global PETSc Vec size, same convention as poisson.py and
+        # solve_transient_ts() in runner.py. Verify this against a serial
+        # run before trusting parallel numbers, per the project's usual
+        # serial-vs-parallel MPI-correctness check.
+        result.dofs = self._problem.p.x.petsc_vec.getSize()
         result.setup_time = 0.0
         result.solve_time = float(t2 - t1)
-        result.success = True
-        result.final_time = float(t_tilde_final)
-        result.iterations = 0
-        result.n_ksp_iterations_total = 0
-        result.n_snes_iterations_total = 0
-        result.residual = 0.0
-        result.converged_reason = 0
-        result.converged_reason_string = "custom_transient_run"
-        result.n_timesteps = 0
+
+        # Real solver stats pulled off the TS after solve(), mirroring
+        # solve_transient_ts() in runner.py -- previously hardcoded to 0,
+        # which threw away the entire point of sweeping ts/ksp/pc types.
+        result.n_timesteps = solver.n_timesteps
+        result.n_ksp_iterations_total = solver.n_ksp_iterations_total
+        result.n_snes_iterations_total = solver.n_snes_iterations_total
+        result.iterations = solver.n_ksp_iterations_total
+        result.final_time = solver.final_time
+        result.converged_reason = solver.converged_reason
+        result.converged_reason_string = get_ts_converged_reason_str(
+            solver.converged_reason
+        )
+        result.success = solver.converged_reason > 0
+        result.residual = self._problem.p.x.petsc_vec.norm()
