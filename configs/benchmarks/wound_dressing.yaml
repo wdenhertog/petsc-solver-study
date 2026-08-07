@@ -4,11 +4,11 @@ problems:
     assembly_mode: ufl_highlevel
     kind: transient
     mesh_sweep:
-      nx: [20, 30]
-      ny: [20, 30]
-      nz: [4]
+      nx: [40,80]
+      ny: [40,80]
+      nz: [6,12,24]
     param_sweep:
-      T_tilde: [0.1, 0.2]
+      T_tilde: [0.2]
       t_star: [1.0]
       Q0: [1e-7]
       Q_inf: [5e-9]
@@ -36,13 +36,42 @@ problems:
       W: Dressing width
     solver_sweep:
       ts:
+        - ts_type: beuler
+          extra: {}
+        - ts_type: cn
+          extra: {}
         - ts_type: bdf
           extra:
             ts_bdf_order: 2
+        - ts_type: theta
+          extra:
+            ts_theta_theta: 0.7
+        - ts_type: arkimex
+          extra:
+            ts_arkimex_type: ars122
       ksp:
         - ksp_type: cg
           extra: {}
+        - ksp_type: gmres
+          extra:
+            ksp_gmres_restart: 40
+        - ksp_type: fgmres
+          extra:
+            ksp_gmres_restart: 60
       pc:
         - pc_type: jacobi
           extra:
             pc_jacobi_type: diagonal
+        - pc_type: bjacobi
+          extra: {}
+        - pc_type: hypre
+          extra:
+            pc_hypre_type: boomeramg
+        - pc_type: gamg
+          extra:
+            pc_gamg_type: agg
+      direct:
+        - ksp_type: preonly
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps
