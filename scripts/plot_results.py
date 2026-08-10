@@ -38,10 +38,8 @@ variant as a separate noisy line". Use --legend-by to override (e.g.
 
 Problem-instance filtering
 ---------------------------
-`n`, `nprocs`, and any problem-specific sweep parameters identify *which
-problem instance* was solved, not how. If a run varies extra problem
-parameters (for example a nonlinear continuation parameter), fix those with
-`--instance-filter key=value` so plots compare solvers on the same instance.
+Use `--instance-filter key=value` to lock mesh/parameter columns to one
+instance so plots compare solvers on the same problem instance.
 
 Usage:
     python3 scripts/plot_results.py results/json/20260722T222536_b3ccfea
@@ -174,23 +172,33 @@ def prep(df: pd.DataFrame, problem: str, legend_cols: list[str]) -> pd.DataFrame
 
 
 def apply_instance_filter(
-    df: pd.DataFrame, n=None, nprocs=None, instance_filters: dict | None = None
+    df: pd.DataFrame, nprocs=None, instance_filters: dict | None = None
 ) -> pd.DataFrame:
     """Fix problem-instance columns that are provided (not None) and present in df."""
     sub = df
-    if n is not None and "n" in sub.columns:
-        sub = sub[sub["n"] == n]
     if nprocs is not None and "nprocs" in sub.columns:
         sub = sub[sub["nprocs"] == nprocs]
     if instance_filters:
         for col, value in instance_filters.items():
             if value is None:
                 continue
-            if col in {"n", "nprocs"}:
+            if col == "nprocs":
                 continue
             if col in sub.columns:
                 sub = sub[sub[col] == value]
     return sub
+
+
+def ensure_dofs_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Require that every JSONL row carries its own dofs value."""
+    if "dofs" not in df.columns:
+        raise ValueError("Missing 'dofs' field in JSONL rows.")
+
+    df = df.copy()
+    df["dofs"] = pd.to_numeric(df["dofs"], errors="coerce")
+    if df["dofs"].isna().any():
+        raise ValueError("Some JSONL rows have missing or invalid 'dofs' values.")
+    return df
 
 
 def format_instance_context(
@@ -245,7 +253,7 @@ def compare_backends(
     if cpp.empty or py.empty:
         return pd.DataFrame()
 
-    join_keys = join_cols or (SOLVER_FLAG_COLS + ["n", "nprocs"])
+    join_keys = join_cols or (SOLVER_FLAG_COLS + ["nprocs"])
     join_keys = [c for c in join_keys if c in cpp.columns and c in py.columns]
 
     # Keep mode visible in output even if not used as a join key.
@@ -304,7 +312,7 @@ def plot_iterations_vs_dofs(
     sub = df[df["success"] == True]
     sub = apply_instance_filter(sub, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
-        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        ctx = format_instance_context(instance_filters, exclude_keys={"nprocs"})
         print(
             f"  [iterations_vs_dofs] no successful rows at nprocs={nprocs}{ctx}, skipping"
         )
@@ -316,13 +324,15 @@ def plot_iterations_vs_dofs(
     for label, grp in best.groupby("config_label"):
         grp = grp.sort_values("dofs")
         if grp["dofs"].nunique() < 2:
-            continue  # need at least 2 mesh sizes to show a trend
+            # Show sparse sweeps as points instead of dropping the family entirely.
+            ax.scatter(grp["dofs"], grp[metric], label=label, alpha=0.85, s=35)
+            continue
         ax.plot(grp["dofs"], grp[metric], marker="o", label=label, alpha=0.85)
 
     ax.set_xscale("log")
     ax.set_xlabel("DOFs (log scale)")
     ax.set_ylabel(metric)
-    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+    inst_str = format_instance_context(instance_filters, exclude_keys={"nprocs"})
     ax.set_title(
         f"{problem}: best {metric} vs DOFs (nprocs={nprocs}{inst_str})\n"
         f"Flat = algorithmically optimal preconditioner. Each line: best sub-config per family."
@@ -379,18 +389,15 @@ def pareto_front(points: pd.DataFrame, x_col: str, y_col: str) -> pd.DataFrame:
 def plot_pareto(
     df: pd.DataFrame,
     problem: str,
-    n: int,
     nprocs: int,
     memory_metric: str,
     instance_filters: dict | None = None,
 ):
     sub = df[df["success"] == True]
-    sub = apply_instance_filter(
-        sub, n=n, nprocs=nprocs, instance_filters=instance_filters
-    )
+    sub = apply_instance_filter(sub, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
-        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-        print(f"  [pareto] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"nprocs"})
+        print(f"  [pareto] no successful rows at nprocs={nprocs}{ctx}, skipping")
         return
 
     front = pareto_front(sub, "solve_time", memory_metric)
@@ -413,7 +420,7 @@ def plot_pareto(
     )
     ax.set_xlabel("solve_time (s)")
     ax.set_ylabel(memory_metric_label(memory_metric))
-    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+    inst_str = format_instance_context(instance_filters, exclude_keys={"nprocs"})
     metric_note = (
         "per-rank max — will it fit"
         if memory_metric == "peak_memory_bytes"
@@ -421,7 +428,7 @@ def plot_pareto(
     )
     ax.set_title(
         f"{problem}: solve_time vs {memory_metric_label(memory_metric)} ({metric_note})\n"
-        f"(n={n}, nprocs={nprocs}{inst_str})"
+        f"(nprocs={nprocs}{inst_str})"
     )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     return fig
@@ -435,18 +442,15 @@ def plot_pareto(
 def plot_setup_vs_solve(
     df: pd.DataFrame,
     problem: str,
-    n: int,
     nprocs: int,
     instance_filters: dict | None = None,
 ):
     sub = df[df["success"] == True]
-    sub = apply_instance_filter(
-        sub, n=n, nprocs=nprocs, instance_filters=instance_filters
-    )
+    sub = apply_instance_filter(sub, nprocs=nprocs, instance_filters=instance_filters)
     if sub.empty:
-        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+        ctx = format_instance_context(instance_filters, exclude_keys={"nprocs"})
         print(
-            f"  [setup_vs_solve] no successful rows at n={n}, nprocs={nprocs}{ctx}, skipping"
+            f"  [setup_vs_solve] no successful rows at nprocs={nprocs}{ctx}, skipping"
         )
         return
 
@@ -454,12 +458,31 @@ def plot_setup_vs_solve(
     for label, grp in sub.groupby("config_label"):
         ax.scatter(grp["setup_time"], grp["solve_time"], label=label, alpha=0.6, s=25)
 
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("setup_time (s, log scale)")
-    ax.set_ylabel("solve_time (s, log scale)")
-    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-    ax.set_title(f"{problem}: setup vs solve time (n={n}, nprocs={nprocs}{inst_str})")
+    x_positive = (sub["setup_time"] > 0).all()
+    y_positive = (sub["solve_time"] > 0).all()
+
+    if x_positive:
+        ax.set_xscale("log")
+        x_label = "setup_time (s, log scale)"
+    else:
+        x_label = "setup_time (s, linear scale)"
+        print(
+            "  [setup_vs_solve] setup_time has non-positive values; using linear x-axis"
+        )
+
+    if y_positive:
+        ax.set_yscale("log")
+        y_label = "solve_time (s, log scale)"
+    else:
+        y_label = "solve_time (s, linear scale)"
+        print(
+            "  [setup_vs_solve] solve_time has non-positive values; using linear y-axis"
+        )
+
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    inst_str = format_instance_context(instance_filters, exclude_keys={"nprocs"})
+    ax.set_title(f"{problem}: setup vs solve time (nprocs={nprocs}{inst_str})")
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
     return fig
 
@@ -470,13 +493,13 @@ def plot_setup_vs_solve(
 
 
 def plot_strong_scaling(
-    df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None
+    df: pd.DataFrame, problem: str, instance_filters: dict | None = None
 ):
     sub = df[df["success"] == True]
-    sub = apply_instance_filter(sub, n=n, instance_filters=instance_filters)
+    sub = apply_instance_filter(sub, instance_filters=instance_filters)
     if sub.empty:
-        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-        print(f"  [strong_scaling] no successful rows at n={n}{ctx}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"nprocs"})
+        print(f"  [strong_scaling] no successful rows{ctx}, skipping")
         return
 
     best = best_of_per_group(sub, ["config_label"], "nprocs", "solve_time")
@@ -501,9 +524,9 @@ def plot_strong_scaling(
     ax.set_yscale("log")
     ax.set_xlabel("nprocs (log2 scale)")
     ax.set_ylabel("solve_time (s, log scale)")
-    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+    inst_str = format_instance_context(instance_filters, exclude_keys={"nprocs"})
     ax.set_title(
-        f"{problem}: strong scaling (n={n}{inst_str}, fixed problem size)\n"
+        f"{problem}: strong scaling ({inst_str.lstrip(', ') or 'filtered instance'})\n"
         f"Each line: best sub-config per family, per nprocs"
     )
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0))
@@ -516,13 +539,13 @@ def plot_strong_scaling(
 
 
 def plot_memory_scaling(
-    df: pd.DataFrame, problem: str, n: int, instance_filters: dict | None = None
+    df: pd.DataFrame, problem: str, instance_filters: dict | None = None
 ):
     sub = df[df["success"] == True]
-    sub = apply_instance_filter(sub, n=n, instance_filters=instance_filters)
+    sub = apply_instance_filter(sub, instance_filters=instance_filters)
     if sub.empty:
-        ctx = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
-        print(f"  [memory_scaling] no successful rows at n={n}{ctx}, skipping")
+        ctx = format_instance_context(instance_filters, exclude_keys={"nprocs"})
+        print(f"  [memory_scaling] no successful rows{ctx}, skipping")
         return
 
     labels = sorted(sub["config_label"].unique())
@@ -566,9 +589,9 @@ def plot_memory_scaling(
     ax.set_yscale("log")
     ax.set_xlabel("nprocs (log2 scale)")
     ax.set_ylabel("memory (GiB, log scale)")
-    inst_str = format_instance_context(instance_filters, exclude_keys={"n", "nprocs"})
+    inst_str = format_instance_context(instance_filters, exclude_keys={"nprocs"})
     ax.set_title(
-        f"{problem}: memory scaling (n={n}{inst_str}, fixed problem size)\n"
+        f"{problem}: memory scaling ({inst_str.lstrip(', ') or 'filtered instance'})\n"
         f"Solid=peak (per-rank max, falling is good) — Dashed=total (whole-job sum, rising is overhead cost)"
     )
     ax.legend(fontsize=7, loc="upper left", bbox_to_anchor=(1.02, 1.0))
@@ -580,13 +603,14 @@ def plot_memory_scaling(
 # ---------------------------------------------------------------------------
 
 
-def pick_default_n(df: pd.DataFrame) -> int:
-    """Largest mesh size present at every nprocs value, so strong_scaling has full coverage."""
-    counts = df.groupby("n")["nprocs"].nunique()
-    full_coverage = counts[counts == df["nprocs"].nunique()]
-    if full_coverage.empty:
-        return int(df["n"].median())
-    return int(full_coverage.index.max())
+def pick_default_nprocs(df: pd.DataFrame) -> int:
+    """Choose the most common successful process count (fall back to minimum)."""
+    if "nprocs" not in df.columns or df["nprocs"].dropna().empty:
+        return 1
+    counts = df["nprocs"].value_counts()
+    if counts.empty:
+        return int(df["nprocs"].min())
+    return int(counts.index[0])
 
 
 def save_fig(fig, out_dir: Path, name: str, plot_label: str):
@@ -630,15 +654,9 @@ def main():
     parser.add_argument(
         "--nprocs",
         type=int,
-        default=1,
-        help="Fixed nprocs for per-DOF/single-rank plots (iterations_vs_dofs, pareto, setup_vs_solve).",
-    )
-    parser.add_argument(
-        "--n",
-        type=int,
         default=None,
-        help="Fixed mesh size for plots that need one (pareto, setup_vs_solve, strong_scaling). "
-        "Defaults to the largest n present at every nprocs value.",
+        help="Fixed nprocs for per-DOF/single-rank plots (iterations_vs_dofs, pareto, setup_vs_solve). "
+        "Defaults to the most common nprocs among successful rows for each problem.",
     )
     parser.add_argument(
         "--instance-filter",
@@ -685,12 +703,18 @@ def main():
     legend_cols = args.legend_by or DEFAULT_LEGEND_COLS
 
     df = load_run(run_dir)
+    df = ensure_dofs_column(df)
     problems = args.problems or sorted(df["problem"].dropna().unique())
 
     for problem in problems:
         print(f"\n=== {problem} ===")
         sub = prep(df, problem, legend_cols)
-        n = args.n if args.n is not None else pick_default_n(sub)
+        successful_sub = sub[sub["success"] == True]
+        nprocs = (
+            args.nprocs
+            if args.nprocs is not None
+            else pick_default_nprocs(successful_sub)
+        )
 
         instance_filters = {}
         for key, raw in raw_instance_filters.items():
@@ -714,7 +738,7 @@ def main():
             fig = plot_iterations_vs_dofs(
                 sub,
                 problem,
-                nprocs=args.nprocs,
+                nprocs=nprocs,
                 metric=args.iter_metric,
                 instance_filters=instance_filters,
             )
@@ -726,31 +750,24 @@ def main():
             fig = plot_pareto(
                 sub,
                 problem,
-                n=n,
-                nprocs=args.nprocs,
+                nprocs=nprocs,
                 memory_metric=args.memory_metric,
                 instance_filters=instance_filters,
             )
             save_fig(fig, out_dir, "pareto", "pareto")
         if "setup_vs_solve" in args.plots:
             fig = plot_setup_vs_solve(
-                sub, problem, n=n, nprocs=args.nprocs, instance_filters=instance_filters
+                sub, problem, nprocs=nprocs, instance_filters=instance_filters
             )
             save_fig(fig, out_dir, "setup_vs_solve", "setup_vs_solve")
         if "strong_scaling" in args.plots:
-            fig = plot_strong_scaling(
-                sub, problem, n=n, instance_filters=instance_filters
-            )
+            fig = plot_strong_scaling(sub, problem, instance_filters=instance_filters)
             save_fig(fig, out_dir, "strong_scaling", "strong_scaling")
         if "memory_scaling" in args.plots:
-            fig = plot_memory_scaling(
-                sub, problem, n=n, instance_filters=instance_filters
-            )
+            fig = plot_memory_scaling(sub, problem, instance_filters=instance_filters)
             save_fig(fig, out_dir, "memory_scaling", "memory_scaling")
 
-        inst_str = format_instance_context(
-            instance_filters, exclude_keys={"n", "nprocs"}
-        )
+        inst_str = format_instance_context(instance_filters, exclude_keys={"nprocs"})
         print(f"  wrote plots to {out_dir} (legend grouped by {legend_cols}{inst_str})")
 
 

@@ -83,8 +83,6 @@ def sorted_unique(series: pd.Series) -> list:
 def default_for_column(df: pd.DataFrame, col: str, options: list):
     if not options:
         return None
-    if col == "n" and "n" in df.columns:
-        return pr.pick_default_n(df)
     if pd.api.types.is_numeric_dtype(df[col]):
         return options[len(options) // 2]
     return options[0]
@@ -249,7 +247,6 @@ for key in instance_keys:
     instance_filters[key] = value
 
 nprocs = int(instance_filters.get("nprocs", 1))
-n = int(instance_filters.get("n", pr.pick_default_n(sub))) if "n" in sub.columns else 0
 
 memory_metric = st.sidebar.radio(
     "Pareto memory axis",
@@ -306,13 +303,12 @@ with tabs[0]:
     metric = st.radio(
         "Metric", ["iterations", "outer_iterations"], horizontal=True, key="iter_metric"
     )
-    iter_filters = {k: v for k, v in instance_filters.items() if k != "n"}
     fig = pr.plot_iterations_vs_dofs(
         sub,
         problem,
         nprocs=nprocs,
         metric=metric,
-        instance_filters=iter_filters,
+        instance_filters=instance_filters,
     )
     if fig is not None:
         st.pyplot(fig)
@@ -330,7 +326,6 @@ with tabs[2]:
     fig = pr.plot_pareto(
         sub,
         problem,
-        n=n,
         nprocs=nprocs,
         memory_metric=memory_metric,
         instance_filters=instance_filters,
@@ -342,7 +337,7 @@ with tabs[2]:
 
 with tabs[3]:
     fig = pr.plot_setup_vs_solve(
-        sub, problem, n=n, nprocs=nprocs, instance_filters=instance_filters
+        sub, problem, nprocs=nprocs, instance_filters=instance_filters
     )
     if fig is not None:
         st.pyplot(fig)
@@ -350,14 +345,14 @@ with tabs[3]:
         st.info("No successful rows for this selection.")
 
 with tabs[4]:
-    fig = pr.plot_strong_scaling(sub, problem, n=n, instance_filters=instance_filters)
+    fig = pr.plot_strong_scaling(sub, problem, instance_filters=instance_filters)
     if fig is not None:
         st.pyplot(fig)
     else:
         st.info("No successful rows for this selection.")
 
 with tabs[5]:
-    fig = pr.plot_memory_scaling(sub, problem, n=n, instance_filters=instance_filters)
+    fig = pr.plot_memory_scaling(sub, problem, instance_filters=instance_filters)
     if fig is not None:
         st.pyplot(fig)
     else:
@@ -369,26 +364,32 @@ with tabs[6]:
         "Rank by", rr.METRIC_CHOICES, horizontal=True, key="rank_metric"
     )
     rank_input = sub.drop(columns=["config_label"], errors="ignore")
-    valid_for_grouping = rank_input[rank_input.get("success") == True].copy()
-    if valid_for_grouping.empty:
-        st.info("No successful rows for this selection.")
+    rank_input = pr.apply_instance_filter(
+        rank_input, nprocs=nprocs, instance_filters=instance_filters
+    )
+    if rank_input.empty:
+        st.info("No rows for this selection.")
     else:
-        group_cols = rr.infer_group_cols(valid_for_grouping, run_config)
-        ranked = rr.rank(
-            rank_input, metric=metric_choice, top_n=top_n, group_cols=group_cols
-        )
-        st.dataframe(ranked, width="stretch")
-        st.download_button(
-            "Download this table as CSV",
-            ranked.to_csv(index=False),
-            file_name=f"{run_dir.name}_{problem}_top{top_n}_{metric_choice}.csv",
-            mime="text/csv",
-        )
+        valid_for_grouping = rank_input[rank_input.get("success") == True].copy()
+        if valid_for_grouping.empty:
+            st.info("No successful rows for this selection.")
+        else:
+            group_cols = rr.infer_group_cols(valid_for_grouping, run_config)
+            ranked = rr.rank(
+                rank_input, metric=metric_choice, top_n=top_n, group_cols=group_cols
+            )
+            st.dataframe(ranked, width="stretch")
+            st.download_button(
+                "Download this table as CSV",
+                ranked.to_csv(index=False),
+                file_name=f"{run_dir.name}_{problem}_top{top_n}_{metric_choice}.csv",
+                mime="text/csv",
+            )
 
 with tabs[7]:
     compare_input = sub.drop(columns=["config_label"], errors="ignore")
     compare_input = pr.apply_instance_filter(
-        compare_input, n=n, nprocs=nprocs, instance_filters=instance_filters
+        compare_input, nprocs=nprocs, instance_filters=instance_filters
     )
     compared = pr.compare_backends(compare_input, problem)
     if compared.empty:
