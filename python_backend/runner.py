@@ -285,7 +285,8 @@ def main() -> None:
     fill_memory_usage(result)
 
     if comm.rank == 0:
-        print(json.dumps(result.to_json_dict()))
+        # Leading newline: external libraries (MUMPS) may leave stdout mid-line.
+        print("\n" + json.dumps(result.to_json_dict()), flush=True)
 
 
 if __name__ == "__main__":

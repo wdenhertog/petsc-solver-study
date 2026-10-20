@@ -323,10 +323,23 @@ def run(
             "timed_out": True,
         }
 
-    try:
-        return json.loads(out.stdout)
-    except json.JSONDecodeError:
-        return {"error": out.stderr.strip() or f"exit code {out.returncode}"}
+    # Libraries (e.g. MUMPS) may write diagnostics to stdout, so take the
+    # last JSON object (it may even be glued to an unterminated library line).
+    decoder = json.JSONDecoder()
+    pos = out.stdout.rfind('{"problem"')
+    while pos != -1:
+        try:
+            obj, _ = decoder.raw_decode(out.stdout[pos:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+        pos = out.stdout.rfind('{"problem"', 0, pos)
+    tail = out.stdout.strip()[-500:]
+    return {
+        "error": out.stderr.strip()
+        or f"exit code {out.returncode}; no JSON in stdout; stdout tail: {tail!r}"
+    }
 
 
 def log(f, result: dict, **context):
