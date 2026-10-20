@@ -1,9 +1,9 @@
 """Generate the frozen mesh ladder for the burn-injury solver study.
 
-Run ONCE, serially, in the burn_injuries environment (needs dolfinx + gmsh +
-the burn_injuries package):
+Run ONCE, serially, in the petsc-solver-study pixi env (needs dolfinx + gmsh,
+both declared in pixi.toml; no external packages):
 
-    pixi run -e <env> python scripts/generate_burn_meshes.py \
+    pixi run python scripts/generate_burn_meshes.py \
         --out meshes/burn --levels 0-10
 
 Meshes are written as XDMF/HDF5 (cells + cell tags + facet tags) and indexed in
@@ -24,9 +24,15 @@ import time
 from pathlib import Path
 
 import gmsh
-from burn_injuries.meshes import generate_2d_surface_mesh, generate_curved_surface_mesh
-from burn_injuries.meshes.io import save_mesh_xdmf
 from mpi4py import MPI
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from python_backend.problems.burn_injury.meshes import (  # noqa: E402
+    generate_2d_surface_mesh,
+    generate_curved_surface_mesh,
+    save_mesh_xdmf,
+)
 
 H0 = 0.4
 DOMAIN = 10.0
