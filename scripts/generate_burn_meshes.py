@@ -28,10 +28,10 @@ from mpi4py import MPI
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from python_backend.problems.burn_injury.meshes import (  # noqa: E402
+from python_backend.problems.burn_injury.meshes import save_mesh_xdmf  # noqa: E402
+from python_backend.problems.burn_injury.meshes.generators import (  # noqa: E402
     generate_2d_surface_mesh,
     generate_curved_surface_mesh,
-    save_mesh_xdmf,
 )
 
 H0 = 0.4

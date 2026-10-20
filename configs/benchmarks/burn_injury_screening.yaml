@@ -1,0 +1,73 @@
+# Stage 1 screening: solver/preconditioner comparison on the planar 2D burn problem.
+#
+# Fixed time step on a short window, so every solver does *identical* work
+# (same step sequence) and differences are due to the linear solver alone.
+# The VI SNES (vinewtonrsls, adapter default) is required: unconstrained
+# newtonls diverges at the first step, and fieldsplit cannot currently be
+# combined with it (see docs/burn_injury.md).
+#
+# Needs frozen meshes (scripts/generate_burn_meshes.py) in $BURN_MESH_DIR,
+# $VSC_SCRATCH/meshes or meshes/burn.
+#
+#   pixi run benchmark --config configs/benchmarks/burn_injury_screening.yaml --dry-run
+problems:
+  burn_injury:
+    backend: python
+    assembly_mode: ufl_highlevel
+    kind: transient
+    mesh_sweep:
+      burn_case: [planar]
+      burn_level: [2, 4, 6]
+    param_sweep:
+      burn_T_days: [10]
+      burn_dt_days: [0.5]
+    labels:
+      burn_case: Geometry
+      burn_level: Mesh level
+      burn_T_days: Final time (days)
+      burn_dt_days: Fixed dt (days)
+    solver_sweep:
+      ts:
+        - ts_type: bdf
+          extra:
+            ts_bdf_order: 2
+      ksp:
+        - ksp_type: gmres
+          extra:
+            ksp_rtol: 1.0e-3
+            ksp_gmres_restart: 50
+        - ksp_type: gmres
+          extra:
+            ksp_rtol: 1.0e-6
+            ksp_gmres_restart: 50
+      pc:
+        - pc_type: asm
+          extra:
+            pc_asm_overlap: 1
+            sub_pc_type: lu
+        - pc_type: asm
+          extra:
+            pc_asm_overlap: 1
+            sub_pc_type: ilu
+        - pc_type: bjacobi
+          extra:
+            sub_pc_type: ilu
+        - pc_type: gamg
+          extra:
+            pc_gamg_type: agg
+        - pc_type: hypre
+          extra:
+            pc_hypre_type: boomeramg
+      direct:
+        - ksp_type: preonly
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps
+        # Approximate (block low-rank) MUMPS as a preconditioner
+        - ksp_type: gmres
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps
+            mat_mumps_icntl_35: 1
+            mat_mumps_cntl_7: 1.0e-6
+            ksp_rtol: 1.0e-6

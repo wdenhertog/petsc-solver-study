@@ -1,5 +1,5 @@
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from mpi4py import MPI
@@ -32,6 +32,8 @@ class BenchmarkResult:
     petsc_version: str = ""
     backend: str = "python"
     assembly_mode: str = "manual"
+    # Problem-specific metrics (timings, counters, functionals); free-form.
+    details: dict = field(default_factory=dict)
 
     def to_json_dict(self) -> dict:
         return asdict(self)

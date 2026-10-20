@@ -1,0 +1,31 @@
+# Small 1-rank smoke campaign to verify both frozen mesh geometries and the
+# Pixi/PETSc environment on the HPC before launching the larger screening study.
+problems:
+  burn_injury:
+    backend: python
+    assembly_mode: ufl_highlevel
+    kind: transient
+    mesh_sweep:
+      burn_case: [planar, curved]
+      burn_level: [1]
+    param_sweep:
+      burn_T_days: [1]
+      burn_dt_days: [0.5]
+    solver_sweep:
+      ts:
+        - ts_type: bdf
+          extra:
+            ts_bdf_order: 2
+      ksp:
+        - ksp_type: gmres
+          extra:
+            ksp_rtol: 1.0e-3
+      pc:
+        - pc_type: bjacobi
+          extra:
+            sub_pc_type: ilu
+      direct:
+        - ksp_type: preonly
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps

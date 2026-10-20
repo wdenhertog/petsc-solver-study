@@ -1,16 +1,11 @@
-"""Vendored mesh utilities for the burn-injury benchmark (no external burn_injuries dependency)."""
+"""Vendored mesh utilities for the burn-injury benchmark.
+
+Loading frozen meshes needs only dolfinx. The generators (which need gmsh) are
+deliberately not imported here; use `from .generators import ...` explicitly.
+"""
 
 from .data import TaggedMesh
-from .generators import generate_2d_surface_mesh, generate_curved_surface_mesh
 from .io import load_surface_mesh, save_mesh_xdmf
 from .tags import CellTag, FacetTag
 
-__all__ = [
-    "CellTag",
-    "FacetTag",
-    "TaggedMesh",
-    "generate_2d_surface_mesh",
-    "generate_curved_surface_mesh",
-    "load_surface_mesh",
-    "save_mesh_xdmf",
-]
+__all__ = ["CellTag", "FacetTag", "TaggedMesh", "load_surface_mesh", "save_mesh_xdmf"]
