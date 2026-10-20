@@ -1,0 +1,63 @@
+# Stage 1 screening on the curved 2D (surface) burn problem.
+#
+# Same design as burn_injury_screening.yaml (planar). Plain ILU variants are
+# left out: bjacobi+ilu diverged at the first Newton step on curved L01
+# (GMRES hit the iteration cap), so only subdomain-LU, multigrid and
+# MUMPS-based preconditioners are screened here.
+#
+#   pixi run benchmark --config configs/benchmarks/burn_injury_screening_curved.yaml --dry-run
+problems:
+  burn_injury:
+    backend: python
+    assembly_mode: ufl_highlevel
+    kind: transient
+    mesh_sweep:
+      burn_case: [curved]
+      burn_level: [2, 4, 6]
+    param_sweep:
+      burn_T_days: [10]
+      burn_dt_days: [0.5]
+      snes_lag_jacobian: [1, 2]
+    labels:
+      burn_case: Geometry
+      burn_level: Mesh level
+      burn_T_days: Final time (days)
+      burn_dt_days: Fixed dt (days)
+      snes_lag_jacobian: Jacobian lag
+    solver_sweep:
+      ts:
+        - ts_type: bdf
+          extra:
+            ts_bdf_order: 2
+      ksp:
+        - ksp_type: gmres
+          extra:
+            ksp_rtol: 1.0e-3
+            ksp_gmres_restart: 50
+        - ksp_type: gmres
+          extra:
+            ksp_rtol: 1.0e-6
+            ksp_gmres_restart: 50
+      pc:
+        - pc_type: asm
+          extra:
+            pc_asm_overlap: 1
+            sub_pc_type: lu
+        - pc_type: gamg
+          extra:
+            pc_gamg_type: agg
+        - pc_type: hypre
+          extra:
+            pc_hypre_type: boomeramg
+      direct:
+        - ksp_type: preonly
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps
+        - ksp_type: gmres
+          pc_type: lu
+          extra:
+            pc_factor_mat_solver_type: mumps
+            mat_mumps_icntl_35: 1
+            mat_mumps_cntl_7: 1.0e-6
+            ksp_rtol: 1.0e-6
