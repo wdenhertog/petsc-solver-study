@@ -93,3 +93,5 @@ __pycache__/
 
 # config files
 config.yaml
+
+*logs/
