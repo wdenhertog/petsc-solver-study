@@ -19,8 +19,8 @@ problems:
       burn_case: [planar]
       burn_level: [2, 4, 6]
     param_sweep:
-      burn_T_days: [10]
-      burn_dt_days: [0.5]
+      burn_T_days: [1]
+      burn_dt_days: [0.05]
       # Jacobian assembly dominates at small sizes; lag 2 reuses it every other Newton iteration.
       snes_lag_jacobian: [1, 2]
     labels:

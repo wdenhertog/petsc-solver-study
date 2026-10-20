@@ -15,8 +15,8 @@ problems:
       burn_case: [curved]
       burn_level: [2, 4, 6]
     param_sweep:
-      burn_T_days: [10]
-      burn_dt_days: [0.5]
+      burn_T_days: [1]
+      burn_dt_days: [0.05]
       snes_lag_jacobian: [1, 2]
     labels:
       burn_case: Geometry
