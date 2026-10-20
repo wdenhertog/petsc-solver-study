@@ -24,10 +24,9 @@ import time
 from pathlib import Path
 
 import gmsh
-from mpi4py import MPI
-
 from burn_injuries.meshes import generate_2d_surface_mesh, generate_curved_surface_mesh
 from burn_injuries.meshes.io import save_mesh_xdmf
+from mpi4py import MPI
 
 H0 = 0.4
 DOMAIN = 10.0
@@ -53,22 +52,26 @@ def sha256(path: Path) -> str:
 
 
 def build(case: str, h_far: float):
-    common = dict(
-        domain_size=(DOMAIN, DOMAIN),
-        wound_shape="circle",
-        wound_center=CENTER,
-        wound_radius=WOUND_RADIUS,
-        char_length_far=h_far,
-        char_length_wound=h_far / 2.0,
-        comm=MPI.COMM_SELF,
-    )
+    common = {
+        "domain_size": (DOMAIN, DOMAIN),
+        "wound_shape": "circle",
+        "wound_center": CENTER,
+        "wound_radius": WOUND_RADIUS,
+        "char_length_far": h_far,
+        "char_length_wound": h_far / 2.0,
+        "comm": MPI.COMM_SELF,
+    }
     if case == "planar":
         return generate_2d_surface_mesh(**common)
-    return generate_curved_surface_mesh(height_function="gaussian_bump", surface_params=BUMP, **common)
+    return generate_curved_surface_mesh(
+        height_function="gaussian_bump", surface_params=BUMP, **common
+    )
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--out", type=Path, default=Path("meshes/burn"))
     ap.add_argument("--levels", default="0-10", help="e.g. '0-10' or '0,2,4-6'")
     ap.add_argument("--cases", default="planar,curved")
@@ -80,7 +83,11 @@ def main() -> None:
 
     args.out.mkdir(parents=True, exist_ok=True)
     manifest_path = args.out / "manifest.json"
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"meshes": {}}
+    manifest = (
+        json.loads(manifest_path.read_text())
+        if manifest_path.exists()
+        else {"meshes": {}}
+    )
     manifest["environment"] = {
         "gmsh": gmsh.__version__,
         "python": platform.python_version(),
@@ -118,7 +125,9 @@ def main() -> None:
                 "gen_seconds": round(time.time() - t0, 1),
             }
             manifest_path.write_text(json.dumps(manifest, indent=2))
-            print(f"{name}: {n_vert} vertices, ~{manifest['meshes'][name]['approx_dofs']} DOFs")
+            print(
+                f"{name}: {n_vert} vertices, ~{manifest['meshes'][name]['approx_dofs']} DOFs"
+            )
 
 
 if __name__ == "__main__":
