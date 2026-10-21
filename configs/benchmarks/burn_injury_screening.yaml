@@ -19,15 +19,17 @@ problems:
       burn_case: [planar]
       burn_level: [2, 4, 6]
     param_sweep:
-      burn_T_days: [1]
-      burn_dt_days: [0.05]
+      burn_T_days: [30]
+      burn_dt_days: [0]
+      burn_dt0_days: [0.025]
       # Jacobian assembly dominates at small sizes; lag 2 reuses it every other Newton iteration.
       snes_lag_jacobian: [1, 2]
     labels:
       burn_case: Geometry
       burn_level: Mesh level
       burn_T_days: Final time (days)
-      burn_dt_days: Fixed dt (days)
+      burn_dt_days: 0 = adaptive (production setting)
+      burn_dt0_days: Initial adaptive dt (days); 0.05 fails at L4+
     solver_sweep:
       ts:
         - ts_type: bdf

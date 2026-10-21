@@ -14,6 +14,8 @@ Adapter options
 -burn_T_days          final time in days             (default 20)
 -burn_dt_days         >0: fixed step (days), TS adaptivity off;
                       0: adaptive stepping           (default 0)
+-burn_dt0_days        initial step for adaptive stepping (days);
+                      default: production value (0.05)
 -burn_split           none | scalar_mech | fields    (default none)
                       Builds index sets for -pc_type fieldsplit.
                       Splits are named: scalar_mech -> scalar, mech;
@@ -185,6 +187,7 @@ class BurnInjuryBenchProblem(Problem):
         level = opts.getInt("burn_level", 0)
         T_days = opts.getReal("burn_T_days", 20.0)
         dt_days = opts.getReal("burn_dt_days", 0.0)
+        dt0_days = opts.getReal("burn_dt0_days", 0.0)
         split = opts.getString("burn_split", "none")
         use_bounds = bool(opts.getBool("burn_bounds", True))
         if split != "none" and split not in SPLITS:
@@ -253,7 +256,7 @@ class BurnInjuryBenchProblem(Problem):
                 if not opts.hasName(key):
                     opts[key] = val
             ts.setTolerances(atol=ap["ts_atol"], rtol=ap["ts_rtol"])  # overridable via -ts_atol/-ts_rtol
-            ts.setTimeStep(ap["initial_dt"])
+            ts.setTimeStep(dt0_days / problem.t_c if dt0_days > 0.0 else ap["initial_dt"])
             ts.setMaxSNESFailures(-1)
 
         ts.setFromOptions()
