@@ -1,7 +1,9 @@
 # Stage 1 screening: solver/preconditioner comparison on the planar 2D burn problem.
 #
-# Fixed time step on a short window, so every solver does *identical* work
-# (same step sequence) and differences are due to the linear solver alone.
+# Production-style adaptive BDF2 (basic adaptivity, ts_rtol=1e-2) over the first
+# 30 days, started at dt0=0.025 d (0.05 fails at L4+). The step sequence depends
+# on the solver, so compare steps/rejections as well as time, and check accuracy
+# with scripts/analyze_burn_screening.py.
 # The VI SNES (vinewtonrsls, adapter default) is required: unconstrained
 # newtonls diverges at the first step, and fieldsplit cannot currently be
 # combined with it (see docs/burn_injury.md).
