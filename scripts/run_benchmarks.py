@@ -301,11 +301,18 @@ def run(
         cmd += [f"-{k}", str(v)]
     for k, v in spec["solver"].items():
         cmd += [f"-{k}", str(v)]
+    has_ksp_max_it = any(
+        "ksp_max_it" in options
+        for options in (spec["mesh"], spec["param"], spec["solver"])
+    )
     if spec["problem_kind"] == "linear":
-        cmd += ["-ksp_max_it", str(max_it)]
+        if not has_ksp_max_it:
+            cmd += ["-ksp_max_it", str(max_it)]
     elif spec["problem_kind"] == "nonlinear":
-        cmd += ["-snes_max_it", str(snes_max_it), "-ksp_max_it", str(max_it)]
-    elif spec["problem_kind"] == "transient":
+        cmd += ["-snes_max_it", str(snes_max_it)]
+        if not has_ksp_max_it:
+            cmd += ["-ksp_max_it", str(max_it)]
+    elif spec["problem_kind"] == "transient" and not has_ksp_max_it:
         cmd += ["-ksp_max_it", str(max_it)]
 
     try:

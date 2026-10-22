@@ -16,11 +16,14 @@ Adapter options
                       0: adaptive stepping           (default 0)
 -burn_dt0_days        initial step for adaptive stepping (days);
                       default: production value (0.05)
--burn_split           none | scalar_mech | fields    (default none)
+-burn_split           none | scalar_mech | fields | chem_mech (default none)
                       Builds index sets for -pc_type fieldsplit.
                       Splits are named: scalar_mech -> scalar, mech;
                       fields -> N, M, rho, c, v, eps
                       (so e.g. -fieldsplit_scalar_pc_type gamg).
+                      chem_mech uses a DM field decomposition rebuilt on
+                      the vinewtonrsls inactive set (chem=N,M,rho,c;
+                      mech=v,eps).
 -burn_bounds          true|false: enforce non-negativity with a VI SNES
                       (default true; needs -snes_type vi*)
 """
@@ -53,11 +56,14 @@ ALL_FIELDS = SCALAR_FIELDS + ("v", "eps")
 SPLITS = {
     "scalar_mech": {"scalar": (0, 1, 2, 3), "mech": (4, 5)},
     "fields": {name: (i,) for i, name in enumerate(ALL_FIELDS)},
+    "chem_mech": {"chem": (0, 1, 2, 3), "mech": (4, 5)},
 }
 
 
 def resolve_mesh_dir(opts: PETSc.Options) -> Path:
-    explicit = opts.getString("burn_mesh_dir", "") or os.environ.get("BURN_MESH_DIR", "")
+    explicit = opts.getString("burn_mesh_dir", "") or os.environ.get(
+        "BURN_MESH_DIR", ""
+    )
     if explicit:
         return Path(explicit)
     scratch = os.environ.get("VSC_SCRATCH")
@@ -127,10 +133,65 @@ def make_field_is(problem: BurnProblem2D, groups: dict[str, tuple[int, ...]]):
     offset = imap.local_range[0]
     out = []
     for name, comps in groups.items():
-        dofs = np.unique(np.concatenate([problem.V.sub(i).dofmap.list.flatten() for i in comps]))
+        dofs = np.unique(
+            np.concatenate([problem.V.sub(i).dofmap.list.flatten() for i in comps])
+        )
         owned = dofs[dofs < n_local].astype(PETSc.IntType) + PETSc.IntType(offset)
         out.append((name, PETSc.IS().createGeneral(owned, comm=problem.comm)))
     return out
+
+
+def make_owned_global_dofs(
+    problem: BurnProblem2D, fields: tuple[int, ...]
+) -> np.ndarray:
+    """Return owned mixed-space DOFs for selected fields in global numbering."""
+    index_map = problem.V.dofmap.index_map
+    n_owned = index_map.size_local
+    start = index_map.local_range[0]
+    local = np.unique(
+        np.concatenate([problem.V.sub(i).dofmap.list.flatten() for i in fields])
+    )
+    return local[local < n_owned].astype(PETSc.IntType) + PETSc.IntType(start)
+
+
+def configure_vi_fieldsplit(
+    problem: BurnProblem2D, snes: PETSc.SNES, ksp: PETSc.KSP
+) -> PETSc.DMShell:
+    """Install a DM field decomposition that follows VINEWTONRSLS reduction."""
+    comm = problem.comm
+    chem_dofs = make_owned_global_dofs(
+        problem, (problem.idx_N, problem.idx_M, problem.idx_rho, problem.idx_c)
+    )
+    mech_dofs = make_owned_global_dofs(problem, (problem.idx_v, problem.idx_eps))
+
+    def create_field_decomposition(dm):
+        inactive = snes.getVIInactiveSet()
+        if inactive is None or inactive.getSize() == 0:
+            chem, mech = chem_dofs, mech_dofs
+        else:
+            inactive_dofs = np.asarray(inactive.getIndices(), dtype=PETSc.IntType)
+            reduced_offset = comm.exscan(inactive_dofs.size)
+            # Map each rank's inactive entries into PETSc's rank-concatenated reduced numbering.
+            reduced_dofs = np.arange(inactive_dofs.size, dtype=PETSc.IntType) + (
+                reduced_offset or 0
+            )
+            in_chem = np.isin(inactive_dofs, chem_dofs)
+            in_mech = np.isin(inactive_dofs, mech_dofs)
+            if not np.all(in_chem | in_mech) or np.any(in_chem & in_mech):
+                raise RuntimeError(
+                    "VINEWTONRSLS inactive set does not map cleanly to the burn chem/mech fields"
+                )
+            chem, mech = reduced_dofs[in_chem], reduced_dofs[in_mech]
+
+        is_chem = PETSc.IS().createGeneral(chem, comm=comm)
+        is_mech = PETSc.IS().createGeneral(mech, comm=comm)
+        return ["chem", "mech"], [is_chem, is_mech], None
+
+    dm = PETSc.DMShell().create(comm=comm)
+    dm.setCreateFieldDecomposition(create_field_decomposition)
+    ksp.setDM(dm)
+    ksp.setDMActive(PETSc.KSP.DMActive.ALL, False)
+    return dm
 
 
 def final_functionals(problem: BurnProblem2D) -> dict[str, float]:
@@ -145,7 +206,8 @@ def final_functionals(problem: BurnProblem2D) -> dict[str, float]:
     forms["l2sq_eps"] = fem.form(ufl.inner(parts[5], parts[5]) * dx)
     forms["area"] = fem.form(1.0 * dx)
     out = {
-        key: float(problem.comm.allreduce(fem.assemble_scalar(form), op=MPI.SUM)) for key, form in forms.items()
+        key: float(problem.comm.allreduce(fem.assemble_scalar(form), op=MPI.SUM))
+        for key, form in forms.items()
     }
     # Global minimum of each non-negative field: shows whether the VI bounds ever bind.
     n_local = problem.V.dofmap.index_map.size_local
@@ -159,7 +221,16 @@ def final_functionals(problem: BurnProblem2D) -> dict[str, float]:
 
 def event_times() -> dict[str, float]:
     out = {}
-    for name in ("SNESSolve", "SNESJacobianEval", "SNESFunctionEval", "KSPSetUp", "PCSetUp", "KSPSolve", "PCApply", "MatLUFactorNum"):
+    for name in (
+        "SNESSolve",
+        "SNESJacobianEval",
+        "SNESFunctionEval",
+        "KSPSetUp",
+        "PCSetUp",
+        "KSPSolve",
+        "PCApply",
+        "MatLUFactorNum",
+    ):
         try:
             info = PETSc.Log.Event(name).getPerfInfo()
             out[name] = float(info["time"])
@@ -191,24 +262,47 @@ class BurnInjuryBenchProblem(Problem):
         split = opts.getString("burn_split", "none")
         use_bounds = bool(opts.getBool("burn_bounds", True))
         if split != "none" and split not in SPLITS:
-            raise ValueError(f"-burn_split must be none, {', '.join(SPLITS)}; got '{split}'")
+            raise ValueError(
+                f"-burn_split must be none, {', '.join(SPLITS)}; got '{split}'"
+            )
+        vi_fieldsplit = split == "chem_mech"
+        if vi_fieldsplit and not use_bounds:
+            raise ValueError("-burn_split chem_mech requires -burn_bounds true")
 
         # Defaults only where the user gave nothing.
-        for key, val in {
+        defaults = {
             "snes_type": "vinewtonrsls",
             "snes_atol": 1e-8,
             "snes_rtol": 1e-6,
             "snes_stol": 1e-12,
             "snes_max_it": 20,
             "snes_linesearch_type": "bt",
-            "ksp_type": "preonly",
-            "pc_type": "lu",
+            "ksp_type": "fgmres" if vi_fieldsplit else "preonly",
+            "pc_type": "fieldsplit" if vi_fieldsplit else "lu",
             "ts_bdf_order": 2,
-        }.items():
+        }
+        for key, val in defaults.items():
             if not opts.hasName(key):
                 opts[key] = val
-        if opts.getString("pc_type", "") == "lu" and not opts.hasName("pc_factor_mat_solver_type"):
+        if opts.getString("pc_type", "") == "lu" and not opts.hasName(
+            "pc_factor_mat_solver_type"
+        ):
             opts["pc_factor_mat_solver_type"] = "mumps"
+        if vi_fieldsplit:
+            for key, val in {
+                "ksp_rtol": 1e-8,
+                "ksp_atol": 1e-14,
+                "ksp_max_it": 200,
+                "pc_fieldsplit_type": "multiplicative",
+                "fieldsplit_chem_ksp_type": "preonly",
+                "fieldsplit_chem_pc_type": "lu",
+                "fieldsplit_chem_pc_factor_mat_solver_type": "mumps",
+                "fieldsplit_mech_ksp_type": "preonly",
+                "fieldsplit_mech_pc_type": "lu",
+                "fieldsplit_mech_pc_factor_mat_solver_type": "mumps",
+            }.items():
+                if not opts.hasName(key):
+                    opts[key] = val
 
         # ---- mesh + problem setup -------------------------------------------------
         t_setup0 = MPI.Wtime()
@@ -252,11 +346,18 @@ class BurnInjuryBenchProblem(Problem):
             ap = get_standard_adaptive_params(scales, dim=2)
             if not opts.hasName("ts_adapt_type"):
                 opts["ts_adapt_type"] = "basic"
-            for key, val in (("ts_adapt_dt_min", ap["dt_min_value"]), ("ts_adapt_dt_max", ap["dt_max_value"])):
+            for key, val in (
+                ("ts_adapt_dt_min", ap["dt_min_value"]),
+                ("ts_adapt_dt_max", ap["dt_max_value"]),
+            ):
                 if not opts.hasName(key):
                     opts[key] = val
-            ts.setTolerances(atol=ap["ts_atol"], rtol=ap["ts_rtol"])  # overridable via -ts_atol/-ts_rtol
-            ts.setTimeStep(dt0_days / problem.t_c if dt0_days > 0.0 else ap["initial_dt"])
+            ts.setTolerances(
+                atol=ap["ts_atol"], rtol=ap["ts_rtol"]
+            )  # overridable via -ts_atol/-ts_rtol
+            ts.setTimeStep(
+                dt0_days / problem.t_c if dt0_days > 0.0 else ap["initial_dt"]
+            )
             ts.setMaxSNESFailures(-1)
 
         ts.setFromOptions()
@@ -275,10 +376,20 @@ class BurnInjuryBenchProblem(Problem):
         ksp.setFromOptions()
         pc = ksp.getPC()
         pc.setFromOptions()
+        dm = None
         if split != "none":
             if pc.getType() != "fieldsplit":
                 raise ValueError("-burn_split requires -pc_type fieldsplit")
-            pc.setFieldSplitIS(*make_field_is(problem, SPLITS[split]))
+            if vi_fieldsplit:
+                if snes.getType() != "vinewtonrsls":
+                    raise ValueError(
+                        "-burn_split chem_mech currently requires -snes_type vinewtonrsls"
+                    )
+                if not PETSc.Options().hasName("pc_fieldsplit_type"):
+                    pc.setFieldSplitType(PETSc.PC.CompositeType.MULTIPLICATIVE)
+                dm = configure_vi_fieldsplit(problem, snes, ksp)
+            else:
+                pc.setFieldSplitIS(*make_field_is(problem, SPLITS[split]))
 
         U = problem.U.x.petsc_vec
         ts.setSolution(U)
@@ -327,7 +438,9 @@ class BurnInjuryBenchProblem(Problem):
             "n_jacobian_evals": appctx.n_jacobian,
             "n_rejected_steps": ts.getStepRejections(),
             "n_snes_failures": ts.getSNESFailures(),
-            "n_ksp_failures": ts.getKSPFailures() if hasattr(ts, "getKSPFailures") else None,
+            "n_ksp_failures": ts.getKSPFailures()
+            if hasattr(ts, "getKSPFailures")
+            else None,
             "petsc_events": event_times(),
             "wall_clock_epoch": time.time(),
         }
@@ -338,3 +451,5 @@ class BurnInjuryBenchProblem(Problem):
         result.details = details
 
         ts.destroy()
+        if dm is not None:
+            dm.destroy()

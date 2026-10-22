@@ -5,13 +5,37 @@
 # on the solver, so compare steps/rejections as well as time, and check accuracy
 # with scripts/analyze_burn_screening.py.
 # The VI SNES (vinewtonrsls, adapter default) is required: unconstrained
-# newtonls diverges at the first step, and fieldsplit cannot currently be
-# combined with it (see docs/burn_injury.md).
+# newtonls diverges at the first step.
+#
+# Pruned after the first HPC screening (4 and 16 ranks, L2/4/6, 3 h timeout):
+#   - gamg and hypre/boomeramg: 10-100x slower than MUMPS at L2, timed out at L4+,
+#     and gave inaccurate results on the curved problem. Removed.
+#   - asm + subdomain LU: 2-4x slower than MUMPS and OOM-killed at L6 (4 ranks). Removed.
+#   - gmres rtol 1e-6 with ILU variants: slower, same accuracy as 1e-3. Removed.
+# Remaining contenders: MUMPS (reference), BLR-MUMPS, asm/bjacobi + ILU. ILU wins
+# at 16 ranks for L2-L4 (e.g. 14 s vs 26 s at L2) but is on par with MUMPS at L6.
+# Rank count is set via the TARGET_NPROCS env var (e.g. 4 and 16), not in this file.
 #
 # Needs frozen meshes (scripts/generate_burn_meshes.py) in $BURN_MESH_DIR,
 # $VSC_SCRATCH/meshes or meshes/burn.
 #
+# Fieldsplit entries (burn_split: chem_mech) use a DMShell decomposition that follows the
+# VINEWTONRSLS active set; outer FGMRES, exact-MUMPS blocks unless noted.
+#
 #   pixi run benchmark --config configs/benchmarks/burn_injury_screening.yaml --dry-run
+# YAML anchors for the fieldsplit entries below (ignored by the runner, which only reads `problems`).
+# ILU blocks are wrapped in asm (overlap 0 = block Jacobi; bjacobi fails on the VI sub-matrices in parallel); "amg" = hypre boomeramg.
+_fieldsplit_blocks:
+  outer: &fs {burn_split: chem_mech, ksp_rtol: 1.0e-3, ksp_max_it: 500}
+  chem_lu: &chem_lu {fieldsplit_chem_ksp_type: preonly, fieldsplit_chem_pc_type: lu, fieldsplit_chem_pc_factor_mat_solver_type: mumps}
+  chem_ilu: &chem_ilu {fieldsplit_chem_ksp_type: preonly, fieldsplit_chem_pc_type: asm, fieldsplit_chem_pc_asm_overlap: 0, fieldsplit_chem_sub_pc_type: ilu}
+  chem_gamg: &chem_gamg {fieldsplit_chem_ksp_type: preonly, fieldsplit_chem_pc_type: gamg, fieldsplit_chem_pc_gamg_type: agg}
+  chem_amg: &chem_amg {fieldsplit_chem_ksp_type: preonly, fieldsplit_chem_pc_type: hypre, fieldsplit_chem_pc_hypre_type: boomeramg}
+  mech_lu: &mech_lu {fieldsplit_mech_ksp_type: preonly, fieldsplit_mech_pc_type: lu, fieldsplit_mech_pc_factor_mat_solver_type: mumps}
+  mech_ilu: &mech_ilu {fieldsplit_mech_ksp_type: preonly, fieldsplit_mech_pc_type: asm, fieldsplit_mech_pc_asm_overlap: 0, fieldsplit_mech_sub_pc_type: ilu}
+  mech_gamg: &mech_gamg {fieldsplit_mech_ksp_type: preonly, fieldsplit_mech_pc_type: gamg, fieldsplit_mech_pc_gamg_type: agg}
+  mech_amg: &mech_amg {fieldsplit_mech_ksp_type: preonly, fieldsplit_mech_pc_type: hypre, fieldsplit_mech_pc_hypre_type: boomeramg}
+
 problems:
   burn_injury:
     backend: python
@@ -38,32 +62,25 @@ problems:
           extra:
             ts_bdf_order: 2
       ksp:
+        # rtol 1e-6 gave no accuracy benefit over 1e-3 in the first screening and was 10-50% slower.
         - ksp_type: gmres
           extra:
             ksp_rtol: 1.0e-3
-            ksp_gmres_restart: 50
-        - ksp_type: gmres
-          extra:
-            ksp_rtol: 1.0e-6
             ksp_gmres_restart: 50
       pc:
         - pc_type: asm
           extra:
             pc_asm_overlap: 1
-            sub_pc_type: lu
+            sub_pc_type: ilu
+        # Cheap ILU(1) variant to see whether stronger subdomain factorisation cuts the GMRES counts
         - pc_type: asm
           extra:
             pc_asm_overlap: 1
             sub_pc_type: ilu
+            sub_pc_factor_levels: 1
         - pc_type: bjacobi
           extra:
             sub_pc_type: ilu
-        - pc_type: gamg
-          extra:
-            pc_gamg_type: agg
-        - pc_type: hypre
-          extra:
-            pc_hypre_type: boomeramg
       direct:
         - ksp_type: preonly
           pc_type: lu
@@ -77,3 +94,45 @@ problems:
             mat_mumps_icntl_35: 1
             mat_mumps_cntl_7: 1.0e-6
             ksp_rtol: 1.0e-6
+        # Fieldsplit chem|mech (VI reduced space), outer FGMRES. Entries are
+        # <fieldsplit type> x <chem block solver> x <mech block solver>, see anchors at the top.
+        # multiplicative: chem block (rows) x mech block (columns)
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_lu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_ilu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_gamg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_amg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_lu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_ilu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_gamg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_amg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_lu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_ilu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_gamg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_amg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_lu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_ilu], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_gamg], pc_fieldsplit_type: multiplicative}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_amg], pc_fieldsplit_type: multiplicative}}
+        # additive
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_lu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_ilu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_gamg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_amg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_lu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_ilu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_gamg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_ilu, *mech_amg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_lu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_ilu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_gamg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_gamg, *mech_amg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_lu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_ilu], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_gamg], pc_fieldsplit_type: additive}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_amg, *mech_amg], pc_fieldsplit_type: additive}}
+        # symmetric multiplicative: reference only (about 2x the work per application)
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_lu], pc_fieldsplit_type: symmetric_multiplicative}}
+        # Schur complement (chem = block 0, mech = block 1)
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_lu], pc_fieldsplit_type: schur, pc_fieldsplit_schur_fact_type: full, pc_fieldsplit_schur_precondition: selfp}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_lu], pc_fieldsplit_type: schur, pc_fieldsplit_schur_fact_type: upper, pc_fieldsplit_schur_precondition: selfp}}
+        - {ksp_type: fgmres, pc_type: fieldsplit, extra: {<<: [*fs, *chem_lu, *mech_amg], pc_fieldsplit_type: schur, pc_fieldsplit_schur_fact_type: upper, pc_fieldsplit_schur_precondition: selfp}}

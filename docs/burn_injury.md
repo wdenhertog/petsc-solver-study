@@ -39,9 +39,20 @@ intentionally does not load a separate PETSc module.
 ## Options
 
 See the module docstring of `benchmark.py` (`-burn_case`, `-burn_level`, `-burn_T_days`,
-`-burn_dt_days`, `-burn_split`, `-burn_bounds`). All `-ts_*`, `-snes_*`, `-ksp_*`, `-pc_*`
+`-burn_dt_days`, `-burn_dt0_days`, `-burn_split`, `-burn_bounds`). All `-ts_*`, `-snes_*`, `-ksp_*`, `-pc_*`
 flags come from the PETSc options database; the adapter only fills in defaults for flags
 you did not pass (VI Newton, BDF2, LU/MUMPS).
+
+### Experimental VI-aware fieldsplit
+
+`-burn_split chem_mech -pc_type fieldsplit` installs a `DMShell` decomposition for
+`chem` (`N`, `M`, `rho`, `c`) and `mech` (`v`, `eps`). Unlike the legacy static
+splits, this callback maps the current `vinewtonrsls` inactive set into reduced
+matrix numbering whenever PETSc rebuilds the preconditioner after an active-set
+change. It requires `-snes_type vinewtonrsls` and bounds enabled. Defaults are
+outer FGMRES with multiplicative fieldsplit, and preonly/LU/MUMPS on each block;
+all remain overridable via PETSc options. See
+`configs/benchmarks/burn_injury_fieldsplit.yaml` for a small planar/curved test.
 
 ## Recorded metrics
 
@@ -57,10 +68,9 @@ LU/MUMPS run on the same mesh/parameters to check accuracy.
 - Unconstrained `newtonls` diverges at the first step even with LU: the non-negativity
   bounds are required (the lower bound on M is active). Use a VI SNES.
 - `vinewtonssls` fails even with LU on this problem; use `vinewtonrsls`.
-- `-pc_type fieldsplit` + `-burn_split` fails under `vinewtonrsls`: the reduced-space solver
-  resets the PC when the active set changes, which drops user-supplied index sets
-  ("Unhandled case, must have at least two fields, not 0"). Open problem; the
-  `-burn_split` hook is only usable with bounds disabled, which does not converge.
+- Static `-pc_type fieldsplit` index sets do not survive `vinewtonrsls` active-set
+  changes. The experimental `-burn_split chem_mech` DMShell mode addresses this by
+  rebuilding split sets in reduced-space numbering; it still needs validation on Wice.
 - Jacobian assembly is a large share of the cost on small meshes (about 0.3-0.6 s per
   evaluation at 35k DOFs). Compare solvers on `PCSetUp` + `KSPSolve`, not just total time,
   and consider `-snes_lag_jacobian` / `-snes_lag_preconditioner`.
