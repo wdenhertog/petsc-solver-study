@@ -81,6 +81,7 @@ Testing/
 *.json
 *.jsonl
 *.png
+*.txt
 
 # PETSc logs
 *.petsc
