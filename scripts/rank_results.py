@@ -36,24 +36,26 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 RESULTS_JSON_DIR = REPO_ROOT / "results" / "json"
 RESULTS_CSV_DIR = REPO_ROOT / "results" / "csv"
 
-SOLVER_FLAG_COLS = [
-    "ts_type",
-    "ts_theta_theta",
-    "ts_bdf_order",
-    "ts_arkimex_type",
-    "ts_imex_alpha",
-    "snes_type",
-    "snes_linesearch_type",
-    "ksp_type",
-    "ksp_gmres_restart",
-    "pc_type",
-    "pc_jacobi_type",
-    "pc_factor_levels",
-    "pc_gamg_type",
-    "pc_gamg_threshold",
-    "pc_asm_overlap",
-    "pc_factor_mat_solver_type",
-]
+SOLVER_PREFIXES = (
+    "snes_",
+    "ksp_",
+    "pc_",
+    "ts_",
+    "sub_",
+    "fieldsplit_",
+    "mat_",
+    "mg_",
+    "tao_",
+)
+
+
+def is_solver_col(col: str) -> bool:
+    return col.startswith(SOLVER_PREFIXES)
+
+
+def has_nested(series: pd.Series) -> bool:
+    return series.dropna().map(lambda v: isinstance(v, (dict, list, set))).any()
+
 
 NON_INSTANCE_COLS = {
     "problem",
@@ -81,6 +83,7 @@ NON_INSTANCE_COLS = {
     "petsc_version",
     "backend",
     "assembly_mode",
+    "details",
 }
 
 # Lower is better for both currently-supported ranking metrics.
@@ -153,13 +156,16 @@ def infer_group_cols(valid: pd.DataFrame, run_config: dict | None) -> list[str]:
         if col in valid.columns and col not in group_cols:
             group_cols.append(col)
 
-    # Fallback: if config is missing or incomplete, include other varying
-    # non-solver, non-metric columns as instance dimensions.
-    excluded = set(SOLVER_FLAG_COLS) | NON_INSTANCE_COLS
+    # Fallback: an instance axis is defined on EVERY row, varies, and is
+    # neither a solver option nor a metric. Solver-specific options
+    # (fieldsplit_*, sub_pc_*, ...) are NaN on other rows and drop out here.
     for col in valid.columns:
-        if col in excluded or col in group_cols:
+        if col in NON_INSTANCE_COLS or col in group_cols or is_solver_col(col):
             continue
-        if valid[col].dropna().nunique() > 1:
+        s = valid[col]
+        if has_nested(s) or s.isna().any():
+            continue
+        if s.nunique() > 1:
             group_cols.append(col)
 
     return group_cols

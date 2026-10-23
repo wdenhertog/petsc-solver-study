@@ -117,43 +117,20 @@ def get_instance_keys(problem_cfg: dict, sub_df: pd.DataFrame) -> list[str]:
         fallback = [k for k in ["nprocs", "n"] if k in sub_df.columns]
         keys.extend(fallback)
 
-    # If config metadata is missing/incomplete, auto-surface varying non-solver
-    # columns as problem-instance controls.
-    exclude_cols = {
-        "problem",
-        "config_label",
-        "success",
-        "error",
-        "timed_out",
-        "converged_reason",
-        "converged_reason_string",
-        "iterations",
-        "n_timesteps",
-        "n_ksp_iterations_total",
-        "n_snes_iterations_total",
-        "outer_iterations",
-        "residual",
-        "residual_norm",
-        "setup_time",
-        "solve_time",
-        "final_time",
-        "l2_error_vs_exact",
-        "dofs",
-        "peak_memory_bytes",
-        "total_memory_bytes",
-        "git_sha",
-        "git_dirty",
-        "petsc_version",
-        "backend",
-        "assembly_mode",
-    }
-    exclude_cols.update(pr.SOLVER_FLAG_COLS)
-
+    # If config metadata is missing/incomplete, auto-surface problem-instance
+    # columns: defined on every row, varying, scalar, and neither a metric
+    # nor a solver option. Solver-specific options (fieldsplit_*, sub_pc_*, ...)
+    # are NaN on rows that don't use them, so they drop out here.
     inferred = []
     for col in sub_df.columns:
-        if col in exclude_cols or col in keys:
+        if col in rr.NON_INSTANCE_COLS or col == "config_label" or col in keys:
             continue
-        if sub_df[col].dropna().nunique() > 1:
+        if rr.is_solver_col(col):
+            continue
+        s = sub_df[col]
+        if rr.has_nested(s) or s.isna().any():
+            continue
+        if s.nunique() > 1:
             inferred.append(col)
     keys.extend(sorted(inferred))
 
